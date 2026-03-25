@@ -164,6 +164,9 @@ export default function VideoCall({ userName, peerInfo }) {
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
           ],
         };
         if (!cancelled) {
@@ -281,7 +284,8 @@ export default function VideoCall({ userName, peerInfo }) {
       ],
     };
 
-    const pc = new RTCPeerConnection(config);
+    // Use max-bundle to reduce ICE candidates (1 transport instead of per-media)
+    const pc = new RTCPeerConnection({ ...config, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && currentTargetRef.current) {
