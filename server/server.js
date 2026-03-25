@@ -4,24 +4,44 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+
+const CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+
+app.use(cors({
+  origin: CORS_ORIGIN === '*' ? '*' : CORS_ORIGIN.split(',').map(s => s.trim()),
+  methods: ['GET', 'POST'],
+}));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: CORS_ORIGIN === '*' ? '*' : CORS_ORIGIN.split(',').map(s => s.trim()),
     methods: ['GET', 'POST'],
   },
 });
 
-// ── Track online users: socketId → { userName, room, status } ──
+// ── Track online users: socketId → { userName, room, status, uid } ──
 const onlineUsers = new Map();
+
+// ── UID → socketId lookup ──
+function getSocketIdByUid(uid) {
+  for (const [socketId, info] of onlineUsers.entries()) {
+    if (info.uid === uid) return socketId;
+  }
+  return null;
+}
 
 // ── Helper: broadcast updated user list to everyone ──
 function broadcastOnlineUsers() {
   const users = [];
   onlineUsers.forEach((info, socketId) => {
-    users.push({ socketId, userName: info.userName, room: info.room, status: info.status });
+    users.push({
+      socketId,
+      userName: info.userName,
+      room: info.room,
+      status: info.status,
+      uid: info.uid || null,
+    });
   });
   io.emit('online-users', users);
 }
@@ -31,28 +51,46 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', service: 'AuraCall Signaling Server', users: onlineUsers.size });
 });
 
+// ── TURN credentials endpoint ──
+app.get('/api/turn-credentials', (req, res) => {
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+  // Add TURN if configured
+  if (process.env.TURN_URL) {
+    iceServers.push({
+      urls: process.env.TURN_URL,
+      username: process.env.TURN_USERNAME || '',
+      credential: process.env.TURN_CREDENTIAL || '',
+    });
+  }
+  res.json({ iceServers });
+});
+
 // ── Socket.IO connection handling ──
 io.on('connection', (socket) => {
   console.log(`✅  Connected: ${socket.id}`);
 
-  // ── Join room ──
-  socket.on('join-room', ({ userName, room }) => {
+  // ── Join room (now accepts uid) ──
+  socket.on('join-room', ({ userName, room, uid }) => {
     const roomId = room || 'lobby';
     socket.join(roomId);
 
-    onlineUsers.set(socket.id, { userName, room: roomId, status: 'available' });
-    console.log(`👤  ${userName} joined room "${roomId}" (${socket.id})`);
+    onlineUsers.set(socket.id, { userName, room: roomId, status: 'available', uid: uid || null });
+    console.log(`👤  ${userName} joined room "${roomId}" (${socket.id}) uid=${uid || 'none'}`);
 
     // Notify others in the room
     socket.to(roomId).emit('user-joined', {
       socketId: socket.id,
       userName,
+      uid: uid || null,
     });
 
     broadcastOnlineUsers();
   });
 
-  // ── Call a specific user ──
+  // ── Call a specific user by socketId ──
   socket.on('call-user', ({ targetSocketId, callerName, callerSocketId, callType }) => {
     const caller = onlineUsers.get(socket.id);
     console.log(`📞  ${caller?.userName || socket.id} calling ${targetSocketId} (${callType || 'video'})`);
@@ -60,6 +98,7 @@ io.on('connection', (socket) => {
     io.to(targetSocketId).emit('incoming-call', {
       callerSocketId: socket.id,
       callerName: callerName || caller?.userName || 'Unknown',
+      callerUid: caller?.uid || null,
       callType: callType || 'video',
     });
 
@@ -70,6 +109,51 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Call a user by Firebase UID ──
+  socket.on('call-user-by-uid', ({ targetUid, callerName, callerUid, callType }) => {
+    const caller = onlineUsers.get(socket.id);
+    const targetSocketId = getSocketIdByUid(targetUid);
+
+    console.log(`📞  ${caller?.userName || socket.id} calling uid=${targetUid} → socketId=${targetSocketId} (${callType || 'video'})`);
+
+    if (!targetSocketId) {
+      // Target user is offline
+      socket.emit('call-failed', {
+        reason: 'offline',
+        targetUid,
+        message: 'User is not online',
+      });
+      return;
+    }
+
+    const target = onlineUsers.get(targetSocketId);
+
+    // Check if target is already in a call
+    if (target && (target.status === 'in-call' || target.status === 'calling')) {
+      socket.emit('call-busy', {
+        targetUid,
+        targetSocketId,
+        message: 'User is busy',
+      });
+      return;
+    }
+
+    io.to(targetSocketId).emit('incoming-call', {
+      callerSocketId: socket.id,
+      callerName: callerName || caller?.userName || 'Unknown',
+      callerUid: callerUid || caller?.uid || null,
+      callType: callType || 'video',
+    });
+
+    // Update caller status
+    if (caller) {
+      caller.status = 'calling';
+      onlineUsers.set(socket.id, caller);
+    }
+
+    broadcastOnlineUsers();
+  });
+
   // ── Accept call ──
   socket.on('accept-call', ({ callerSocketId }) => {
     const accepter = onlineUsers.get(socket.id);
@@ -78,6 +162,7 @@ io.on('connection', (socket) => {
     io.to(callerSocketId).emit('call-accepted', {
       accepterSocketId: socket.id,
       accepterName: accepter?.userName || 'Unknown',
+      accepterUid: accepter?.uid || null,
     });
 
     // Update statuses
@@ -208,6 +293,7 @@ io.on('connection', (socket) => {
       socket.to(user.room).emit('user-left', {
         socketId: socket.id,
         userName: user.userName,
+        uid: user.uid || null,
       });
     }
 
