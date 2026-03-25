@@ -16,6 +16,7 @@ import { db } from "./firebase";
 
 /**
  * Send a friend request from currentUser to targetUid.
+ * Uses single-field queries + client-side filtering to avoid composite index issues.
  */
 export async function sendFriendRequest(currentUser, targetUid) {
   if (!currentUser || !targetUid) throw new Error("Missing user data");
@@ -28,28 +29,25 @@ export async function sendFriendRequest(currentUser, targetUid) {
       throw new Error("Already friends with this user");
     }
 
-    // Check for existing pending request in either direction
     const requestsRef = collection(db, "friendRequests");
 
-    const outgoingQ = query(
-      requestsRef,
-      where("from", "==", currentUser.uid),
-      where("to", "==", targetUid),
-      where("status", "==", "pending")
-    );
+    // Check outgoing: did I already send a pending request to this user?
+    const outgoingQ = query(requestsRef, where("from", "==", currentUser.uid));
     const outgoingSnap = await getDocs(outgoingQ);
-    if (!outgoingSnap.empty) {
+    const hasOutgoing = outgoingSnap.docs.some(
+      (d) => d.data().to === targetUid && d.data().status === "pending"
+    );
+    if (hasOutgoing) {
       throw new Error("Friend request already sent");
     }
 
-    const incomingQ = query(
-      requestsRef,
-      where("from", "==", targetUid),
-      where("to", "==", currentUser.uid),
-      where("status", "==", "pending")
-    );
+    // Check incoming: did this user already send me a pending request?
+    const incomingQ = query(requestsRef, where("to", "==", currentUser.uid));
     const incomingSnap = await getDocs(incomingQ);
-    if (!incomingSnap.empty) {
+    const hasIncoming = incomingSnap.docs.some(
+      (d) => d.data().from === targetUid && d.data().status === "pending"
+    );
+    if (hasIncoming) {
       throw new Error("This user already sent you a request — check your pending requests");
     }
 
@@ -148,11 +146,17 @@ export async function removeFriend(currentUid, friendUid) {
  */
 export function getFriends(uid, callback) {
   const friendsRef = collection(db, "users", uid, "friends");
-  const q = query(friendsRef, orderBy("addedAt", "desc"));
+  const q = query(friendsRef);
   const unsubscribe = onSnapshot(
     q,
     (snapshot) => {
-      const friends = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const friends = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const aTime = a.addedAt?.toMillis?.() || 0;
+          const bTime = b.addedAt?.toMillis?.() || 0;
+          return bTime - aTime;
+        });
       console.log("[Friends] Friends list updated:", friends.length, "friends");
       callback(friends);
     },
@@ -166,20 +170,23 @@ export function getFriends(uid, callback) {
 
 /**
  * Listen to incoming pending friend requests (realtime).
+ * Uses single-field query + client-side filtering to avoid composite index issues.
  * @returns {Function} unsubscribe
  */
 export function getPendingRequests(uid, callback) {
   const requestsRef = collection(db, "friendRequests");
-  const q = query(
-    requestsRef,
-    where("to", "==", uid),
-    where("status", "==", "pending"),
-    orderBy("createdAt", "desc")
-  );
+  const q = query(requestsRef, where("to", "==", uid));
   const unsubscribe = onSnapshot(
     q,
     (snapshot) => {
-      const requests = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const requests = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((r) => r.status === "pending")
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() || 0;
+          const bTime = b.createdAt?.toMillis?.() || 0;
+          return bTime - aTime;
+        });
       console.log("[Friends] Pending requests updated:", requests.length);
       callback(requests);
     },
@@ -193,20 +200,23 @@ export function getPendingRequests(uid, callback) {
 
 /**
  * Listen to outgoing sent friend requests (realtime).
+ * Uses single-field query + client-side filtering to avoid composite index issues.
  * @returns {Function} unsubscribe
  */
 export function getSentRequests(uid, callback) {
   const requestsRef = collection(db, "friendRequests");
-  const q = query(
-    requestsRef,
-    where("from", "==", uid),
-    where("status", "==", "pending"),
-    orderBy("createdAt", "desc")
-  );
+  const q = query(requestsRef, where("from", "==", uid));
   const unsubscribe = onSnapshot(
     q,
     (snapshot) => {
-      const requests = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const requests = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((r) => r.status === "pending")
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() || 0;
+          const bTime = b.createdAt?.toMillis?.() || 0;
+          return bTime - aTime;
+        });
       console.log("[Friends] Sent requests updated:", requests.length);
       callback(requests);
     },

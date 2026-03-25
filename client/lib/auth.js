@@ -3,9 +3,11 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
+  updateProfile,
 } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage } from "./firebase";
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
@@ -86,6 +88,7 @@ export async function saveUserProfile(user) {
         displayName: user.displayName || "",
         email: user.email || "",
         photoURL: user.photoURL || "",
+        bio: "Hey there! I am using AuraCall ✌️",
         createdAt: serverTimestamp(),
         lastSeen: serverTimestamp(),
         isOnline: true,
@@ -94,6 +97,74 @@ export async function saveUserProfile(user) {
     }
   } catch (error) {
     console.error("[Auth] Error saving user profile:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get user profile from Firestore (includes bio and other fields).
+ */
+export async function getUserProfile(uid) {
+  try {
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      return { id: snap.id, ...snap.data() };
+    }
+    return null;
+  } catch (error) {
+    console.error("[Auth] Error getting user profile:", error);
+    return null;
+  }
+}
+
+/**
+ * Update user display name in both Firebase Auth and Firestore.
+ */
+export async function updateUserDisplayName(user, newName) {
+  if (!user || !newName?.trim()) throw new Error("Name cannot be empty");
+  try {
+    await updateProfile(user, { displayName: newName.trim() });
+    const userRef = doc(db, "users", user.uid);
+    await setDoc(userRef, { displayName: newName.trim(), updatedAt: serverTimestamp() }, { merge: true });
+    console.log("[Auth] Display name updated to:", newName.trim());
+  } catch (error) {
+    console.error("[Auth] Error updating display name:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update user bio/about text in Firestore.
+ */
+export async function updateUserBio(uid, newBio) {
+  if (!uid) throw new Error("Missing uid");
+  try {
+    const userRef = doc(db, "users", uid);
+    await setDoc(userRef, { bio: newBio || "", updatedAt: serverTimestamp() }, { merge: true });
+    console.log("[Auth] Bio updated");
+  } catch (error) {
+    console.error("[Auth] Error updating bio:", error);
+    throw error;
+  }
+}
+
+/**
+ * Upload profile photo to Firebase Storage and update user profile.
+ */
+export async function uploadProfilePhoto(user, file) {
+  if (!user || !file) throw new Error("Missing data");
+  try {
+    const storageRef = ref(storage, `profilePhotos/${user.uid}`);
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+    await updateProfile(user, { photoURL: downloadURL });
+    const userRef = doc(db, "users", user.uid);
+    await setDoc(userRef, { photoURL: downloadURL, updatedAt: serverTimestamp() }, { merge: true });
+    console.log("[Auth] Profile photo uploaded");
+    return downloadURL;
+  } catch (error) {
+    console.error("[Auth] Error uploading profile photo:", error);
     throw error;
   }
 }

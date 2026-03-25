@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "./AuthProvider";
 import FriendsList from "./FriendsList";
 import ChatRoom from "./ChatRoom";
@@ -6,6 +6,7 @@ import { getChats, getChatId, markAsRead } from "../lib/chat";
 import { getCallHistory, deleteCallRecord, formatDuration, formatCallTime } from "../lib/callHistory";
 import { getFriends } from "../lib/friends";
 import { watchMultiplePresence, formatLastSeen } from "../lib/presence";
+import { getUserProfile, updateUserDisplayName, updateUserBio, uploadProfilePhoto } from "../lib/auth";
 
 const THEME = {
   bg: "#070B10",
@@ -232,75 +233,172 @@ const styles = {
   },
   // Profile tab
   profileSection: {
-    padding: "30px 20px",
+    padding: "0",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
+  profileHeader: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
+    padding: "30px 20px 24px",
+    background: `linear-gradient(180deg, ${THEME.cardBg} 0%, ${THEME.bg} 100%)`,
+  },
+  profileAvatarWrap: {
+    position: "relative",
+    cursor: "pointer",
+    marginBottom: "16px",
   },
   profileAvatar: {
-    width: "90px",
-    height: "90px",
+    width: "110px",
+    height: "110px",
     borderRadius: "50%",
     objectFit: "cover",
-    marginBottom: "16px",
     border: `3px solid ${THEME.teal}`,
-    boxShadow: `0 0 20px rgba(0,191,166,0.2)`,
+    boxShadow: `0 0 24px rgba(0,191,166,0.25)`,
   },
   profileAvatarPlaceholder: {
-    width: "90px",
-    height: "90px",
+    width: "110px",
+    height: "110px",
     borderRadius: "50%",
-    marginBottom: "16px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "36px",
+    fontSize: "42px",
     fontWeight: "700",
     color: THEME.text,
     background: `linear-gradient(135deg, ${THEME.teal}, #0088cc)`,
     border: `3px solid ${THEME.teal}`,
+    boxShadow: `0 0 24px rgba(0,191,166,0.25)`,
   },
-  profileName: {
-    fontSize: "22px",
+  cameraIcon: {
+    position: "absolute",
+    bottom: "4px",
+    right: "4px",
+    width: "34px",
+    height: "34px",
+    borderRadius: "50%",
+    backgroundColor: THEME.teal,
+    border: `3px solid ${THEME.bg}`,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "15px",
+    cursor: "pointer",
+  },
+  profileNameLarge: {
+    fontSize: "24px",
     fontWeight: "700",
     color: THEME.text,
-    marginBottom: "4px",
+    marginBottom: "2px",
   },
-  profileEmail: {
+  profileEmailSmall: {
     fontSize: "14px",
     color: THEME.textSecondary,
-    marginBottom: "24px",
+  },
+  profileFieldSection: {
+    padding: "0 20px",
+  },
+  profileFieldRow: {
+    display: "flex",
+    alignItems: "center",
+    padding: "16px 0",
+    borderBottom: `1px solid ${THEME.border}`,
+    gap: "14px",
+  },
+  profileFieldIcon: {
+    width: "24px",
+    fontSize: "18px",
+    flexShrink: 0,
+    textAlign: "center",
+    color: THEME.textSecondary,
+  },
+  profileFieldContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileFieldLabel: {
+    fontSize: "12px",
+    color: THEME.textSecondary,
+    marginBottom: "2px",
+    fontWeight: "500",
+  },
+  profileFieldValue: {
+    fontSize: "16px",
+    color: THEME.text,
+    wordBreak: "break-word",
+  },
+  profileFieldEdit: {
+    width: "32px",
+    height: "32px",
+    borderRadius: "8px",
+    border: "none",
+    backgroundColor: "transparent",
+    color: THEME.textSecondary,
+    fontSize: "16px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    transition: "all 0.2s ease",
+  },
+  profileEditInput: {
+    width: "100%",
+    padding: "8px 0",
+    border: "none",
+    borderBottom: `2px solid ${THEME.teal}`,
+    backgroundColor: "transparent",
+    color: THEME.text,
+    fontSize: "16px",
+    outline: "none",
+    fontFamily: "inherit",
+  },
+  profileEditActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+    marginTop: "8px",
+  },
+  profileEditBtn: {
+    padding: "6px 16px",
+    borderRadius: "8px",
+    border: "none",
+    fontSize: "13px",
+    fontWeight: "600",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
   },
   statsRow: {
     display: "flex",
-    gap: "16px",
-    marginBottom: "30px",
-    width: "100%",
+    gap: "12px",
+    margin: "20px 20px",
     justifyContent: "center",
   },
   statCard: {
-    padding: "16px 24px",
+    padding: "14px 20px",
     borderRadius: "14px",
     backgroundColor: THEME.cardBg,
     border: `1px solid ${THEME.border}`,
     textAlign: "center",
     flex: 1,
-    maxWidth: "130px",
+    maxWidth: "110px",
   },
   statNumber: {
-    fontSize: "24px",
+    fontSize: "22px",
     fontWeight: "700",
     color: THEME.teal,
-    marginBottom: "4px",
+    marginBottom: "2px",
   },
   statLabel: {
-    fontSize: "12px",
+    fontSize: "11px",
     color: THEME.textSecondary,
     fontWeight: "500",
   },
   logoutBtn: {
-    width: "100%",
-    maxWidth: "300px",
+    width: "calc(100% - 40px)",
+    margin: "16px 20px 24px",
     padding: "14px",
     borderRadius: "14px",
     border: "none",
@@ -310,7 +408,6 @@ const styles = {
     fontWeight: "600",
     cursor: "pointer",
     transition: "all 0.2s ease",
-    marginTop: "10px",
   },
   emptyState: {
     textAlign: "center",
@@ -346,6 +443,20 @@ const styles = {
     transition: "all 0.2s ease",
     flexShrink: 0,
   },
+  uploadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: "50%",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "14px",
+    color: THEME.text,
+  },
 };
 
 export default function Dashboard({ onStartVideoCall }) {
@@ -356,6 +467,16 @@ export default function Dashboard({ onStartVideoCall }) {
   const [friends, setFriends] = useState([]);
   const [friendPresence, setFriendPresence] = useState(new Map());
   const [activeChatPeer, setActiveChatPeer] = useState(null);
+
+  // Profile editing state
+  const [profile, setProfile] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
+  const [tempName, setTempName] = useState("");
+  const [tempBio, setTempBio] = useState("");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [profileStatus, setProfileStatus] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Listen to chats
   useEffect(() => {
@@ -389,6 +510,14 @@ export default function Dashboard({ onStartVideoCall }) {
     return unsub;
   }, [friends]);
 
+  // Load user profile from Firestore (includes bio)
+  useEffect(() => {
+    if (!currentUser) return;
+    getUserProfile(currentUser.uid).then((p) => {
+      if (p) setProfile(p);
+    });
+  }, [currentUser]);
+
   const totalUnread = chats.reduce((sum, chat) => {
     return sum + (chat.unreadCount?.[currentUser?.uid] || 0);
   }, 0);
@@ -417,7 +546,6 @@ export default function Dashboard({ onStartVideoCall }) {
     if (friend) {
       setActiveChatPeer(friend);
     } else {
-      // Build peer from chat data
       setActiveChatPeer({
         uid: otherUid,
         displayName: otherUid,
@@ -439,6 +567,60 @@ export default function Dashboard({ onStartVideoCall }) {
       await logout();
     } catch (error) {
       console.error("[Dashboard] Logout error:", error);
+    }
+  };
+
+  // Profile editing handlers
+  const showProfileStatus = (msg, type = "success") => {
+    setProfileStatus({ msg, type });
+    setTimeout(() => setProfileStatus(null), 2500);
+  };
+
+  const handleSaveName = async () => {
+    if (!tempName.trim()) return;
+    try {
+      await updateUserDisplayName(currentUser, tempName.trim());
+      setProfile((prev) => ({ ...prev, displayName: tempName.trim() }));
+      setEditingName(false);
+      showProfileStatus("Name updated ✓");
+    } catch (error) {
+      showProfileStatus(error.message, "error");
+    }
+  };
+
+  const handleSaveBio = async () => {
+    try {
+      await updateUserBio(currentUser.uid, tempBio);
+      setProfile((prev) => ({ ...prev, bio: tempBio }));
+      setEditingBio(false);
+      showProfileStatus("About updated ✓");
+    } catch (error) {
+      showProfileStatus(error.message, "error");
+    }
+  };
+
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Validate file
+    if (!file.type.startsWith("image/")) {
+      showProfileStatus("Please select an image file", "error");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showProfileStatus("Image must be under 5MB", "error");
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadProfilePhoto(currentUser, file);
+      setProfile((prev) => ({ ...prev, photoURL: url }));
+      showProfileStatus("Photo updated ✓");
+    } catch (error) {
+      showProfileStatus(error.message, "error");
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -630,18 +812,199 @@ export default function Dashboard({ onStartVideoCall }) {
   };
 
   const renderProfileTab = () => {
+    const displayName = profile?.displayName || currentUser?.displayName || "User";
+    const photoURL = profile?.photoURL || currentUser?.photoURL || "";
+    const email = profile?.email || currentUser?.email || "";
+    const bio = profile?.bio ?? "Hey there! I am using AuraCall ✌️";
+
     return (
       <div style={styles.profileSection}>
-        {currentUser?.photoURL ? (
-          <img src={currentUser.photoURL} alt="Profile" style={styles.profileAvatar} />
-        ) : (
-          <div style={styles.profileAvatarPlaceholder}>
-            {(currentUser?.displayName || "?").charAt(0).toUpperCase()}
+        {/* Hidden file input for photo upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handlePhotoSelect}
+        />
+
+        {/* Status toast */}
+        {profileStatus && (
+          <div
+            style={{
+              padding: "10px 20px",
+              margin: "8px 20px",
+              borderRadius: "10px",
+              fontSize: "13px",
+              textAlign: "center",
+              backgroundColor:
+                profileStatus.type === "error" ? "rgba(248,81,73,0.15)" : "rgba(0,191,166,0.15)",
+              color: profileStatus.type === "error" ? THEME.dangerRed : THEME.teal,
+            }}
+          >
+            {profileStatus.msg}
           </div>
         )}
-        <div style={styles.profileName}>{currentUser?.displayName || "User"}</div>
-        <div style={styles.profileEmail}>{currentUser?.email || ""}</div>
 
+        {/* Profile Header with Photo */}
+        <div style={styles.profileHeader}>
+          <div
+            style={styles.profileAvatarWrap}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {photoURL ? (
+              <img src={photoURL} alt="Profile" style={styles.profileAvatar} />
+            ) : (
+              <div style={styles.profileAvatarPlaceholder}>
+                {displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            {uploadingPhoto ? (
+              <div style={styles.uploadingOverlay}>⏳</div>
+            ) : (
+              <div style={styles.cameraIcon}>📷</div>
+            )}
+          </div>
+          <div style={styles.profileNameLarge}>{displayName}</div>
+          <div style={styles.profileEmailSmall}>{email}</div>
+        </div>
+
+        {/* Profile Fields */}
+        <div style={styles.profileFieldSection}>
+          {/* Name Field */}
+          <div style={styles.profileFieldRow}>
+            <div style={styles.profileFieldIcon}>👤</div>
+            <div style={styles.profileFieldContent}>
+              <div style={styles.profileFieldLabel}>Name</div>
+              {editingName ? (
+                <div>
+                  <input
+                    type="text"
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    style={styles.profileEditInput}
+                    autoFocus
+                    maxLength={50}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                  />
+                  <div style={styles.profileEditActions}>
+                    <button
+                      style={{
+                        ...styles.profileEditBtn,
+                        backgroundColor: THEME.inputBg,
+                        color: THEME.textSecondary,
+                      }}
+                      onClick={() => setEditingName(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      style={{
+                        ...styles.profileEditBtn,
+                        backgroundColor: THEME.teal,
+                        color: "#000",
+                      }}
+                      onClick={handleSaveName}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={styles.profileFieldValue}>{displayName}</div>
+              )}
+              {!editingName && (
+                <div style={{ fontSize: "12px", color: THEME.textSecondary, marginTop: "2px" }}>
+                  This is not your username or pin. This name will be visible to your friends.
+                </div>
+              )}
+            </div>
+            {!editingName && (
+              <button
+                style={styles.profileFieldEdit}
+                onClick={() => {
+                  setTempName(displayName);
+                  setEditingName(true);
+                  setEditingBio(false);
+                }}
+              >
+                ✏️
+              </button>
+            )}
+          </div>
+
+          {/* About / Bio Field */}
+          <div style={styles.profileFieldRow}>
+            <div style={styles.profileFieldIcon}>ℹ️</div>
+            <div style={styles.profileFieldContent}>
+              <div style={styles.profileFieldLabel}>About</div>
+              {editingBio ? (
+                <div>
+                  <input
+                    type="text"
+                    value={tempBio}
+                    onChange={(e) => setTempBio(e.target.value)}
+                    style={styles.profileEditInput}
+                    autoFocus
+                    maxLength={140}
+                    placeholder="Write something about yourself..."
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveBio()}
+                  />
+                  <div style={{ fontSize: "11px", color: THEME.textSecondary, marginTop: "4px", textAlign: "right" }}>
+                    {tempBio.length}/140
+                  </div>
+                  <div style={styles.profileEditActions}>
+                    <button
+                      style={{
+                        ...styles.profileEditBtn,
+                        backgroundColor: THEME.inputBg,
+                        color: THEME.textSecondary,
+                      }}
+                      onClick={() => setEditingBio(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      style={{
+                        ...styles.profileEditBtn,
+                        backgroundColor: THEME.teal,
+                        color: "#000",
+                      }}
+                      onClick={handleSaveBio}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={styles.profileFieldValue}>{bio}</div>
+              )}
+            </div>
+            {!editingBio && (
+              <button
+                style={styles.profileFieldEdit}
+                onClick={() => {
+                  setTempBio(bio);
+                  setEditingBio(true);
+                  setEditingName(false);
+                }}
+              >
+                ✏️
+              </button>
+            )}
+          </div>
+
+          {/* Email Field (read-only) */}
+          <div style={styles.profileFieldRow}>
+            <div style={styles.profileFieldIcon}>📧</div>
+            <div style={styles.profileFieldContent}>
+              <div style={styles.profileFieldLabel}>Email</div>
+              <div style={styles.profileFieldValue}>{email}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats */}
         <div style={styles.statsRow}>
           <div style={styles.statCard}>
             <div style={styles.statNumber}>{friends.length}</div>
@@ -657,37 +1020,7 @@ export default function Dashboard({ onStartVideoCall }) {
           </div>
         </div>
 
-        <div
-          style={{
-            width: "100%",
-            maxWidth: "300px",
-            padding: "16px",
-            borderRadius: "14px",
-            backgroundColor: THEME.cardBg,
-            border: `1px solid ${THEME.border}`,
-            marginBottom: "16px",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "13px",
-              fontWeight: "600",
-              color: THEME.textSecondary,
-              marginBottom: "10px",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-            }}
-          >
-            Account Info
-          </div>
-          <div style={{ fontSize: "13px", color: THEME.textSecondary, marginBottom: "6px" }}>
-            <span style={{ color: THEME.text }}>UID:</span> {currentUser?.uid?.slice(0, 16)}...
-          </div>
-          <div style={{ fontSize: "13px", color: THEME.textSecondary }}>
-            <span style={{ color: THEME.text }}>Provider:</span> Google
-          </div>
-        </div>
-
+        {/* Sign Out */}
         <button
           style={styles.logoutBtn}
           onClick={handleLogout}
@@ -696,6 +1029,17 @@ export default function Dashboard({ onStartVideoCall }) {
         >
           Sign Out
         </button>
+
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: "12px",
+            color: THEME.textSecondary,
+            paddingBottom: "20px",
+          }}
+        >
+          AuraCall v2.0
+        </div>
       </div>
     );
   };
