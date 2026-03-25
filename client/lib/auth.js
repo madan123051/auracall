@@ -1,6 +1,7 @@
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
   updateProfile,
@@ -30,6 +31,31 @@ export async function signInWithGoogle() {
 }
 
 /**
+ * Sign in anonymously (Guest mode).
+ * Creates a guest profile in Firestore.
+ */
+export async function signInAnonymouslyUser() {
+  try {
+    const result = await signInAnonymously(auth);
+    const user = result.user;
+    console.log("[Auth] Anonymous sign-in success:", user.uid);
+
+    // Give the anonymous user a display name
+    const guestName = `Guest_${user.uid.slice(0, 6)}`;
+    await updateProfile(user, { displayName: guestName });
+
+    await saveUserProfile({
+      ...user,
+      displayName: guestName,
+    });
+    return user;
+  } catch (error) {
+    console.error("[Auth] Anonymous sign-in error:", error.code, error.message);
+    throw error;
+  }
+}
+
+/**
  * Sign out the current user.
  */
 export async function signOutUser() {
@@ -49,7 +75,7 @@ export async function signOutUser() {
  */
 export function onAuthStateChanged(callback) {
   return firebaseOnAuthStateChanged(auth, (user) => {
-    console.log("[Auth] State changed:", user ? user.displayName : "signed out");
+    console.log("[Auth] State changed:", user ? (user.displayName || user.uid) : "signed out");
     callback(user);
   });
 }
