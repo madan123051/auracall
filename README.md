@@ -1,74 +1,124 @@
-# 🎥 AuraCall — Drishya Video Call UI
+# 🚀 AuraCall — Pro Video Call & Chat App
 
-> Pro-level video calling interface designed to rival Google Meet. Built for the Drishya platform.
+![Version](https://img.shields.io/badge/version-2.0-00BFA6?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-LIVE-22C55E?style=for-the-badge)
+![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
-![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=flat&logo=html5&logoColor=white)
-![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat&logo=css3&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)
+> **Google Meet killer** — Premium video calling & chat UI with seller product overlay feature 🔥
+
+---
 
 ## ✨ Features
 
-### 📞 Call Screens
-- **Home Screen** — Contact list with search, online status, verified badges
-- **Incoming Call** — Pulse ring animation, accept/decline buttons
-- **Outgoing Call** — Ringing animation with auto-connect
-- **Connecting** — Floating avatar with dot animation
-- **Active Call** — Full video call interface
+### 💬 Chat System
+- WhatsApp-style messaging with sent/received bubbles
+- Read receipts (✓✓ blue ticks)
+- Typing indicator with animated dots
+- Unread message badges
+- Search across conversations
 
-### 🎮 Active Call Controls
-- 🎤 **Mute/Unmute** — Visual state change (red when muted)
-- 📷 **Camera Toggle** — On/off with visual feedback
-- 🖥️ **Screen Share** — Green indicator badge
-- 📸 **Seller Photos** — ⭐ Unique USP! View seller's product photos during call
-- 💬 **In-Call Chat** — Slide-in sidebar with real-time messaging
-- 📞 **End Call** — Returns to home
+### 📞 Video Calling
+- **Incoming call** — pulse ring animation, accept/reject
+- **Outgoing call** — auto-connect simulation
+- **Active call** — real-time timer, network quality bars
+- **Mute/Camera toggle** — visual state feedback
+- **Seller Photos overlay** — ⭐ UNIQUE FEATURE: view seller products during call
+- **In-call chat** — side panel messaging during video call
+- **Screen share indicator**
+
+### 🔍 Discover People
+- User cards with star ratings
+- Mutual connections count
+- Connect/Pending/Connected states
+- Filter: All, Sellers, Buyers, New
+
+### 👤 Profile
+- User stats (Connections, Calls, Rating)
+- Settings menu
+- Clean profile layout
 
 ### 🎨 Design
-- Dark theme with teal accent (#00BFA6)
+- Dark theme with teal (#00BFA6) accent
 - Glass morphism effects
-- Smooth CSS animations & transitions
-- Responsive design
-- Custom scrollbar
-- Network quality indicator
+- Smooth screen transitions
+- Mobile-first responsive
+- 60+ animations
 
-## 🚀 Quick Start
+---
 
-```bash
-# Just open the file in your browser
-open index.html
+## 🛠 Tech Stack
 
-# Or serve with any static server
-npx serve .
+| Layer | Technology |
+|-------|------------|
+| Frontend | HTML5, CSS3, Vanilla JS |
+| Design | Custom dark theme |
+| Icons | Feather-style SVG |
+| Animations | CSS Keyframes + Transitions |
+
+---
+
+## 📁 Project Structure
+
 ```
-
-## 📁 Structure
-
-```
-├── index.html    # Main HTML structure (all screens)
-├── styles.css    # Complete styling with animations
+auracall/
+├── index.html    # Complete HTML (6 screens, 4 tabs)
+├── styles.css    # 1500+ lines of pro styling
 ├── script.js     # Interactive logic & state management
 └── README.md     # This file
 ```
 
-## 🎯 Unique Selling Point
+---
 
-**Seller Photos Overlay** — During a video call, buyers can view the seller's top product photos in a beautiful overlay. This feature doesn't exist in Google Meet, Zoom, or any other video calling platform. This is what makes Drishya different from a clone.
+## 🚀 Quick Start
 
-## 🔧 Tech Stack (for production)
+```bash
+# Clone
+git clone https://github.com/madan123051/auracall.git
 
-- **Framework**: Next.js
-- **Video**: Agora SDK
-- **Chat**: Firebase Firestore
-- **Auth**: Firebase Auth
-- **Notifications**: Firebase Cloud Messaging (FCM)
+# Open in browser
+open index.html
+```
 
-## 📱 Screens Demo
-
-1. Open `index.html`
-2. Click any contact → Outgoing call → Auto-connects → Active call
-3. Click the 📞 ringing icon (top-right) → Incoming call simulation
-4. During active call, try all the control buttons
+No build tools needed! Just open `index.html` in any modern browser.
 
 ---
 
-Built with 🔥 for **Drishya by WildSaura**
+## 📱 Screens
+
+| Screen | Description |
+|--------|-------------|
+| Home — Calls | Recent call history with audio/video buttons |
+| Home — Chats | Conversation list with unread badges |
+| Home — Discover | User discovery cards with connect |
+| Home — Profile | User profile, stats, settings |
+| Chat View | Full messaging with typing indicator |
+| Incoming Call | Pulse ring animation, accept/reject |
+| Outgoing Call | Calling animation with auto-connect |
+| Connecting | Floating avatar animation |
+| Active Call | Timer, controls, PiP, quality bars |
+| Seller Photos | Slide-up product overlay |
+| In-call Chat | Side panel chat during call |
+
+---
+
+## 🌟 What Makes This Special
+
+**Seller Photos Overlay** — During a video call, users can view the seller's product photos in a slide-up panel. This feature doesn't exist in Google Meet, Zoom, or any mainstream app. This is the USP.
+
+---
+
+## 🔮 Roadmap (Production)
+
+- [ ] Firebase/Firestore backend
+- [ ] Agora video SDK integration
+- [ ] Push notifications (FCM)
+- [ ] Online/offline presence
+- [ ] Token-based auth
+- [ ] Real-time messaging
+- [ ] Next.js migration
+
+---
+
+## 📄 License
+
+MIT License — Built with 💚 by Madan Kumar
