@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drishya Video Call</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ====================================================
+       HOME SCREEN — Contact List
+       ==================================================== -->
+  <div id="screen-home" class="screen active">
+    <div class="home-header">
+      <div class="logo">
+        <div class="logo-icon">🏠</div>
+        <span class="logo-text">DRISHYA</span>
+      </div>
+      <div class="header-right">
+        <button class="icon-btn ring-shake" onclick="simulateIncoming()" data-tooltip="Simulate incoming call">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2>Video Calls</h2>
+      <p>Tap a contact to start a video call</p>
+    </div>
+
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+      </svg>
+      <input type="text" placeholder="Search contacts..." id="search-input" oninput="filterContacts()" />
+    </div>
+
+    <div class="contact-list" id="contact-list">
+      <!-- Populated by JS -->
+    </div>
+
+    <div class="home-tip">
+      <span class="tip-emoji">💡</span>
+      <span>Tap the <strong>ringing phone</strong> icon above to simulate an incoming call</span>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       INCOMING CALL SCREEN
+       ==================================================== -->
+  <div id="screen-incoming" class="screen">
+    <div class="call-bg-pattern"></div>
+    <div class="call-content">
+      <div class="call-type-label">Incoming Video Call</div>
+
+      <div class="avatar-ring-container">
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring"></div>
+        <div class="caller-avatar-large avatar-teal" id="incoming-avatar">A</div>
+      </div>
+
+      <div class="caller-name-large" id="incoming-name">Arjun Mehta</div>
+      <div class="caller-subtitle">
+        Seller &nbsp;
+        <span class="badge-verified">✓ Verified</span>
+      </div>
+
+      <div class="incoming-actions">
+        <div class="action-item">
+          <button class="action-btn reject-btn" onclick="rejectCall()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+          <span class="action-label">Decline</span>
+        </div>
+        <div class="action-item">
+          <button class="action-btn accept-btn" onclick="acceptCall()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+          </button>
+          <span class="action-label">Accept</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       OUTGOING CALL SCREEN
+       ==================================================== -->
+  <div id="screen-outgoing" class="screen">
+    <div class="call-bg-pattern"></div>
+    <div class="call-content">
+      <div class="call-type-label">Calling...</div>
+
+      <div class="avatar-ring-container">
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring"></div>
+        <div class="caller-avatar-large avatar-teal" id="outgoing-avatar">A</div>
+      </div>
+
+      <div class="caller-name-large" id="outgoing-name">Arjun Mehta</div>
+      <div class="ringing-text">
+        Ringing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+      </div>
+
+      <div class="outgoing-actions" style="margin-top:48px">
+        <div class="action-item">
+          <button class="action-btn reject-btn" onclick="rejectCall()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+          <span class="action-label">End</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       CONNECTING SCREEN
+       ==================================================== -->
+  <div id="screen-connecting" class="screen">
+    <div class="connecting-content">
+      <div class="connecting-avatar avatar-teal" id="connecting-avatar">A</div>
+      <div class="connecting-text" id="connecting-name">Connecting</div>
+      <div class="connecting-dots">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       ACTIVE CALL SCREEN
+       ==================================================== -->
+  <div id="screen-active" class="screen">
+    <div class="video-area">
+      <!-- Remote Video -->
+      <div class="remote-video">
+        <div class="camera-on-simulation"></div>
+        <div class="remote-avatar avatar-teal" id="remote-avatar">A</div>
+      </div>
+
+      <!-- Call header overlay -->
+      <div class="call-header-overlay">
+        <div class="call-info-left">
+          <div class="call-active-name" id="active-call-name">Arjun Mehta</div>
+          <div class="call-timer-display" id="call-timer">00:00</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="recording-badge" id="recording-badge" style="display:none">
+            <span class="rec-dot"></span> REC
+          </div>
+          <div class="call-quality-indicator">
+            <div class="quality-bars">
+              <div class="bar"></div>
+              <div class="bar"></div>
+              <div class="bar"></div>
+              <div class="bar"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen share indicator -->
+      <div class="screen-share-active" id="screen-share-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        Screen Sharing
+      </div>
+
+      <!-- Remote name tag -->
+      <div class="remote-name-tag" id="remote-name-tag">
+        <div class="mic-indicator"></div>
+        <span id="remote-tag-name">Arjun Mehta</span>
+      </div>
+
+      <!-- Self Video PiP -->
+      <div class="self-video">
+        <div class="self-video-inner">
+          <span style="opacity:0.4">You</span>
+          <div class="self-label">You</div>
+        </div>
+      </div>
+
+      <!-- ===== Seller Photos Overlay ===== -->
+      <div class="photos-overlay" id="photos-overlay">
+        <div class="photos-header">
+          <h3><span class="icon-gold">📸</span> Seller Photos</h3>
+          <button class="close-overlay-btn" onclick="togglePhotos()">✕</button>
+        </div>
+        <div class="feature-badge">
+          ⭐ Exclusive — View seller's product photos live during call
+        </div>
+        <div class="photos-grid">
+          <div class="photo-card">
+            <div class="photo-placeholder grad-1"></div>
+            <div class="photo-card-label">Handmade Pottery</div>
+            <div class="zoom-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </div>
+          </div>
+          <div class="photo-card">
+            <div class="photo-placeholder grad-2"></div>
+            <div class="photo-card-label">Silk Saree</div>
+            <div class="zoom-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </div>
+          </div>
+          <div class="photo-card">
+            <div class="photo-placeholder grad-3"></div>
+            <div class="photo-card-label">Brass Decor</div>
+            <div class="zoom-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Chat Sidebar ===== -->
+      <div class="chat-sidebar" id="chat-sidebar">
+        <div class="chat-header">
+          <h3>💬 In-Call Chat</h3>
+          <button class="close-overlay-btn" onclick="toggleChat()">✕</button>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+          <!-- Populated by JS -->
+        </div>
+        <div class="chat-input-area">
+          <input type="text" id="chat-input" placeholder="Type a message..." onkeydown="handleChatKey(event)" />
+          <button class="send-btn" onclick="sendChatMessage()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls Bar -->
+    <div class="controls-bar">
+      <button class="control-btn" id="btn-mute" data-tooltip="Mute" onclick="toggleMute()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+
+      <button class="control-btn" id="btn-camera" data-tooltip="Camera" onclick="toggleCamera()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+      </button>
+
+      <button class="control-btn" id="btn-screen" data-tooltip="Share Screen" onclick="toggleScreenShare()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </button>
+
+      <button class="control-btn" id="btn-photos" data-tooltip="Seller Photos" onclick="togglePhotos()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <span class="badge-dot"></span>
+      </button>
+
+      <button class="control-btn" id="btn-chat" data-tooltip="Chat" onclick="toggleChat()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+        </svg>
+      </button>
+
+      <button class="control-btn end-call-btn" id="btn-end" data-tooltip="End Call" onclick="endCall()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+</div>
+<script src="./script.js"></script>
+</body>
+</html>
