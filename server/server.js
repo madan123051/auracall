@@ -170,8 +170,10 @@ app.get('/api/turn-credentials', (req, res) => {
   const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
   ];
-  // Add TURN if configured
+  // Add TURN if configured via TURN_URL env var
   if (process.env.TURN_URL) {
     iceServers.push({
       urls: process.env.TURN_URL,
@@ -179,6 +181,28 @@ app.get('/api/turn-credentials', (req, res) => {
       credential: process.env.TURN_CREDENTIAL || '',
     });
   }
+  // Add custom TURN servers from JSON env var
+  if (process.env.TURN_SERVERS_JSON) {
+    try {
+      const customServers = JSON.parse(process.env.TURN_SERVERS_JSON);
+      if (Array.isArray(customServers)) {
+        iceServers.push(...customServers);
+      }
+    } catch (err) {
+      console.warn('⚠️   Failed to parse TURN_SERVERS_JSON:', err.message);
+    }
+  }
+  // Add Metered TURN relay servers if API key is configured
+  if (process.env.METERED_API_KEY) {
+    const meteredKey = process.env.METERED_API_KEY;
+    iceServers.push(
+      { urls: 'turn:global.relay.metered.ca:80', username: meteredKey, credential: meteredKey },
+      { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: meteredKey, credential: meteredKey },
+      { urls: 'turn:global.relay.metered.ca:443', username: meteredKey, credential: meteredKey },
+      { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: meteredKey, credential: meteredKey },
+    );
+  }
+  console.log(`🧊  Returning ${iceServers.length} ICE servers`);
   res.json({ iceServers });
 });
 
@@ -330,14 +354,25 @@ io.on('connection', (socket) => {
   });
 
   // ── Accept call ──
-  socket.on('accept-call', ({ callerSocketId }) => {
+  socket.on('accept-call', ({ callerSocketId, callerUid }) => {
     if (!checkRateLimit(socket.id)) return;
 
     const accepter = onlineUsers.get(socket.id);
-    const caller = onlineUsers.get(callerSocketId);
-    console.log(`✅  ${accepter?.userName || socket.id} accepted call from ${callerSocketId}`);
 
-    if (!isValidTarget(callerSocketId)) {
+    // ── Handle stale callerSocketId: if caller reconnected, resolve via UID ──
+    let effectiveCallerSocketId = callerSocketId;
+    if (!isValidTarget(effectiveCallerSocketId) && callerUid) {
+      const resolvedSocketId = getSocketIdByUid(callerUid);
+      if (resolvedSocketId) {
+        console.log(`🔄  Stale callerSocketId ${callerSocketId} → resolved via UID ${callerUid} to ${resolvedSocketId}`);
+        effectiveCallerSocketId = resolvedSocketId;
+      }
+    }
+
+    const caller = onlineUsers.get(effectiveCallerSocketId);
+    console.log(`✅  ${accepter?.userName || socket.id} accepted call from ${effectiveCallerSocketId} (original: ${callerSocketId}, callerUid: ${callerUid || 'none'})`);
+
+    if (!isValidTarget(effectiveCallerSocketId)) {
       socket.emit('call-failed', {
         reason: 'offline',
         message: 'Caller is no longer available',
@@ -347,29 +382,29 @@ io.on('connection', (socket) => {
 
     // ── Create dynamic call room ──
     const accepterUid = accepter?.uid || socket.userId || socket.id;
-    const callerUid = caller?.uid || callerSocketId;
-    const callRoomId = generateCallRoomId(accepterUid, callerUid);
+    const resolvedCallerUid = caller?.uid || callerUid || effectiveCallerSocketId;
+    const callRoomId = generateCallRoomId(accepterUid, resolvedCallerUid);
 
     const now = Date.now();
     activeCallRooms.set(callRoomId, {
-      participants: [accepterUid, callerUid],
+      participants: [accepterUid, resolvedCallerUid],
       createdAt: now,
       startTime: now,
     });
 
     // Join both sockets to the call room
     socket.join(callRoomId);
-    const callerSocket = io.sockets.sockets.get(callerSocketId);
+    const callerSocket = io.sockets.sockets.get(effectiveCallerSocketId);
     if (callerSocket) {
       callerSocket.join(callRoomId);
     }
 
     // Emit joined-call-room to both
     io.to(socket.id).emit('joined-call-room', { roomId: callRoomId });
-    io.to(callerSocketId).emit('joined-call-room', { roomId: callRoomId });
+    io.to(effectiveCallerSocketId).emit('joined-call-room', { roomId: callRoomId });
 
     // Notify caller that call was accepted
-    io.to(callerSocketId).emit('call-accepted', {
+    io.to(effectiveCallerSocketId).emit('call-accepted', {
       accepterSocketId: socket.id,
       accepterName: accepter?.userName || 'Unknown',
       accepterUid: accepter?.uid || null,
@@ -384,7 +419,7 @@ io.on('connection', (socket) => {
     if (caller) {
       caller.status = 'in-call';
       caller.callStartTime = now;
-      onlineUsers.set(callerSocketId, caller);
+      onlineUsers.set(effectiveCallerSocketId, caller);
     }
 
     console.log(`🏠  Call room created: ${callRoomId}`);

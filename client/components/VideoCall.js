@@ -100,6 +100,8 @@ export default function VideoCall({ userName, peerInfo }) {
   const isCallerRef = useRef(callState === 'calling');
   const styleRef = useRef(null);
   const iceServersRef = useRef(null);
+  const answerReceivedRef = useRef(false);
+  const offerRetryTimerRef = useRef(null);
 
   // Keep target ref in sync
   useEffect(() => {
@@ -160,6 +162,8 @@ export default function VideoCall({ userName, peerInfo }) {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
           ],
         };
         if (!cancelled) {
@@ -230,6 +234,10 @@ export default function VideoCall({ userName, peerInfo }) {
       clearTimeout(failedTimerRef.current);
       failedTimerRef.current = null;
     }
+    if (offerRetryTimerRef.current) {
+      clearTimeout(offerRetryTimerRef.current);
+      offerRetryTimerRef.current = null;
+    }
 
     pendingCandidatesRef.current = [];
     pendingOfferRef.current = null;
@@ -268,6 +276,8 @@ export default function VideoCall({ userName, peerInfo }) {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
       ],
     };
 
@@ -590,6 +600,11 @@ export default function VideoCall({ userName, peerInfo }) {
 
     const handleAnswer = async ({ senderSocketId, answer }) => {
       console.log('[VideoCall] Received answer from', senderSocketId);
+      answerReceivedRef.current = true;
+      if (offerRetryTimerRef.current) {
+        clearTimeout(offerRetryTimerRef.current);
+        offerRetryTimerRef.current = null;
+      }
       try {
         if (peerConnectionRef.current) {
           await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
@@ -675,35 +690,62 @@ export default function VideoCall({ userName, peerInfo }) {
   }, [socket, createPeerConnection, handleEndCall, setCallPeer, setCallState]);
 
   // ── Initiate WebRTC if we are the caller — wait for receiver to ACCEPT first ──
-  // CRITICAL FIX: Previously the offer was sent during 'calling' state, before the
-  // receiver accepted. For UID-based calls, targetSocketId was null at that point,
-  // so the offer was lost and both sides got stuck. Now we wait for:
-  //   1. callState === 'connected' (receiver accepted → server sent call-accepted)
-  //   2. Valid currentTargetRef.current (accepter's socketId)
-  //   3. ICE config + local media stream ready
   useEffect(() => {
     if (!socket || !isCallerRef.current) return;
     if (!iceServersConfig) return;
     if (!localStreamRef.current) return;
-    if (callState !== 'connected') return; // Wait for receiver to accept
-    if (!currentTargetRef.current) return; // Need valid target socketId
+    if (callState !== 'connected') return;
+    if (!currentTargetRef.current) return;
 
-    async function startCall() {
-      console.log('[VideoCall] Caller: creating offer to', currentTargetRef.current);
+    let retryCount = 0;
+    answerReceivedRef.current = false;
+
+    async function sendOffer() {
+      const target = currentTargetRef.current;
+      if (!target || answerReceivedRef.current || !isMountedRef.current) return;
+
+      console.log(`[VideoCall] Caller: sending offer to ${target} (attempt ${retryCount + 1})`);
       setMediaSetupPhase('connecting');
+
       try {
-        const pc = createPeerConnection();
+        let pc = peerConnectionRef.current;
+        if (!pc || pc.signalingState === 'closed') {
+          pc = createPeerConnection();
+        }
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('offer', { targetSocketId: currentTargetRef.current, offer });
+        socket.emit('offer', { targetSocketId: target, offer });
+
+        // Retry after 5 seconds if no answer received
+        if (retryCount < 3) {
+          offerRetryTimerRef.current = setTimeout(() => {
+            if (!answerReceivedRef.current && isMountedRef.current) {
+              retryCount++;
+              console.log('[VideoCall] No answer received, retrying offer...');
+              sendOffer();
+            }
+          }, 5000);
+        }
       } catch (err) {
         console.error('[VideoCall] Error creating offer:', err);
-        handleEndCall();
+        if (retryCount < 3) {
+          retryCount++;
+          offerRetryTimerRef.current = setTimeout(sendOffer, 2000);
+        } else {
+          handleEndCall();
+        }
       }
     }
 
-    const timer = setTimeout(startCall, 300);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(sendOffer, 500);
+    return () => {
+      clearTimeout(timer);
+      if (offerRetryTimerRef.current) {
+        clearTimeout(offerRetryTimerRef.current);
+        offerRetryTimerRef.current = null;
+      }
+    };
   }, [socket, iceServersConfig, createPeerConnection, handleEndCall, localStream, callState, peerInfo?.socketId]);
 
   // ── Call timer ──
@@ -751,6 +793,7 @@ export default function VideoCall({ userName, peerInfo }) {
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
       if (failedTimerRef.current) clearTimeout(failedTimerRef.current);
+      if (offerRetryTimerRef.current) clearTimeout(offerRetryTimerRef.current);
     };
   }, []);
 
