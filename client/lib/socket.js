@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { auth } from './firebase'; // import the auth instance for token refresh
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
 
@@ -10,14 +11,17 @@ export function SocketProvider({ user, children }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const [callState, setCallState] = useState('idle'); // 'idle' | 'calling' | 'incoming' | 'connected'
+  const [callState, setCallState] = useState('idle'); // 'idle' | 'calling' | 'incoming' | 'connected' | 'ended'
   const [incomingCallInfo, setIncomingCallInfo] = useState(null);
   const [callPeer, setCallPeer] = useState(null); // { socketId, uid, name }
+  const [callEndInfo, setCallEndInfo] = useState(null); // { peerName, duration, reason }
+  const [callRoom, setCallRoom] = useState(null); // dynamic call room ID
 
   const socketRef = useRef(null);
   const callStateRef = useRef('idle');
   const callPeerRef = useRef(null);
   const autoRejectTimerRef = useRef(null);
+  const endCallTimerRef = useRef(null);
 
   // Keep refs in sync
   useEffect(() => {
@@ -32,109 +36,174 @@ export function SocketProvider({ user, children }) {
   useEffect(() => {
     if (!user || !user.uid) return;
 
-    const s = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-    });
+    let cancelled = false;
 
-    socketRef.current = s;
-    setSocket(s);
-
-    s.on('connect', () => {
-      console.log('[Socket] Connected:', s.id);
-      setIsConnected(true);
-      // Join room with uid
-      s.emit('join-room', {
-        userName: user.displayName || 'User',
-        room: 'lobby',
-        uid: user.uid,
-      });
-    });
-
-    s.on('disconnect', () => {
-      console.log('[Socket] Disconnected');
-      setIsConnected(false);
-    });
-
-    s.on('reconnect', () => {
-      console.log('[Socket] Reconnected:', s.id);
-      setIsConnected(true);
-      // Re-join room on reconnect
-      s.emit('join-room', {
-        userName: user.displayName || 'User',
-        room: 'lobby',
-        uid: user.uid,
-      });
-    });
-
-    // ── Online users ──
-    s.on('online-users', (users) => {
-      setOnlineUsers(users.filter((u) => u.socketId !== s.id));
-    });
-
-    // ── Incoming call ──
-    s.on('incoming-call', ({ callerSocketId, callerName, callerUid, callType }) => {
-      console.log('[Socket] Incoming call from', callerName, callerUid);
-      // Ignore if already in a call
-      if (callStateRef.current === 'connected' || callStateRef.current === 'calling') {
-        console.log('[Socket] Already in call, auto-rejecting');
-        s.emit('reject-call', { callerSocketId });
-        return;
+    async function connectSocket() {
+      // Get Firebase auth token if available
+      let token = null;
+      try {
+        token = await auth.currentUser?.getIdToken();
+      } catch (err) {
+        console.warn('[Socket] Could not get auth token:', err.message);
       }
 
-      setIncomingCallInfo({ callerSocketId, callerName, callerUid, callType });
-      setCallState('incoming');
-    });
+      if (cancelled) return;
 
-    // ── Call accepted ──
-    s.on('call-accepted', ({ accepterSocketId, accepterName, accepterUid }) => {
-      console.log('[Socket] Call accepted by', accepterName);
-      setCallPeer((prev) => ({
-        ...(prev || {}),
-        socketId: accepterSocketId,
-        uid: accepterUid || prev?.uid || null,
-        name: accepterName || prev?.name || 'Unknown',
-      }));
-      setCallState('connected');
-    });
+      const s = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        auth: { token },
+      });
 
-    // ── Call rejected ──
-    s.on('call-rejected', ({ rejecterName }) => {
-      console.log('[Socket] Call rejected by', rejecterName);
-      setCallState('idle');
-      setCallPeer(null);
-      setIncomingCallInfo(null);
-    });
+      socketRef.current = s;
+      setSocket(s);
 
-    // ── Call ended ──
-    s.on('call-ended', ({ senderName }) => {
-      console.log('[Socket] Call ended by', senderName);
-      setCallState('idle');
-      setCallPeer(null);
-      setIncomingCallInfo(null);
-    });
+      s.on('connect', () => {
+        console.log('[Socket] Connected:', s.id);
+        setIsConnected(true);
+        // Join room with uid
+        s.emit('join-room', {
+          userName: user.displayName || 'User',
+          room: 'lobby',
+          uid: user.uid,
+        });
+      });
 
-    // ── Call failed (user offline) ──
-    s.on('call-failed', ({ reason, message }) => {
-      console.log('[Socket] Call failed:', reason, message);
-      setCallState('idle');
-      setCallPeer(null);
-    });
+      s.on('disconnect', () => {
+        console.log('[Socket] Disconnected');
+        setIsConnected(false);
+      });
 
-    // ── Call busy ──
-    s.on('call-busy', ({ targetUid, message }) => {
-      console.log('[Socket] Call busy:', targetUid, message);
-      setCallState('idle');
-      setCallPeer(null);
-    });
+      s.on('reconnect', () => {
+        console.log('[Socket] Reconnected:', s.id);
+        setIsConnected(true);
+        // Re-join room on reconnect
+        s.emit('join-room', {
+          userName: user.displayName || 'User',
+          room: 'lobby',
+          uid: user.uid,
+        });
+      });
+
+      // ── Auth error handling ──
+      s.on('connect_error', (err) => {
+        if (err.message === 'Authentication required' || err.message === 'Invalid token') {
+          console.error('[Socket] Auth error, refreshing token...');
+          // Try to refresh and reconnect
+          auth.currentUser?.getIdToken(true).then((newToken) => {
+            s.auth = { token: newToken };
+            s.connect();
+          }).catch((refreshErr) => {
+            console.error('[Socket] Token refresh failed:', refreshErr.message);
+          });
+        } else {
+          console.error('[Socket] Connection error:', err.message);
+        }
+      });
+
+      // ── Online users ──
+      s.on('online-users', (users) => {
+        setOnlineUsers(users.filter((u) => u.socketId !== s.id));
+      });
+
+      // ── Incoming call ──
+      s.on('incoming-call', ({ callerSocketId, callerName, callerUid, callType }) => {
+        console.log('[Socket] Incoming call from', callerName, callerUid);
+        // Ignore if already in a call
+        if (callStateRef.current === 'connected' || callStateRef.current === 'calling') {
+          console.log('[Socket] Already in call, auto-rejecting');
+          s.emit('reject-call', { callerSocketId });
+          return;
+        }
+
+        setIncomingCallInfo({ callerSocketId, callerName, callerUid, callType });
+        setCallState('incoming');
+      });
+
+      // ── Call accepted ──
+      s.on('call-accepted', ({ accepterSocketId, accepterName, accepterUid }) => {
+        console.log('[Socket] Call accepted by', accepterName);
+        setCallPeer((prev) => ({
+          ...(prev || {}),
+          socketId: accepterSocketId,
+          uid: accepterUid || prev?.uid || null,
+          name: accepterName || prev?.name || 'Unknown',
+        }));
+        setCallState('connected');
+      });
+
+      // ── Joined call room ──
+      s.on('joined-call-room', ({ roomId }) => {
+        console.log('[Socket] Joined call room:', roomId);
+        setCallRoom(roomId);
+      });
+
+      // ── Call rejected ──
+      s.on('call-rejected', ({ rejecterName }) => {
+        console.log('[Socket] Call rejected by', rejecterName);
+        setCallState('idle');
+        setCallPeer(null);
+        setIncomingCallInfo(null);
+      });
+
+      // ── Call ended (remote) ──
+      s.on('call-ended', ({ senderName, duration }) => {
+        console.log('[Socket] Call ended by', senderName, 'duration:', duration);
+        setCallEndInfo({
+          peerName: senderName || 'Unknown',
+          duration: duration || 0,
+          reason: 'Remote ended the call',
+        });
+        setCallState('ended');
+        setCallPeer(null);
+        setCallRoom(null);
+        setIncomingCallInfo(null);
+
+        // Auto-dismiss after 3 seconds
+        if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
+        endCallTimerRef.current = setTimeout(() => {
+          setCallState('idle');
+          setCallEndInfo(null);
+          endCallTimerRef.current = null;
+        }, 3000);
+      });
+
+      // ── Call failed (user offline) ──
+      s.on('call-failed', ({ reason, message }) => {
+        console.log('[Socket] Call failed:', reason, message);
+        setCallState('idle');
+        setCallPeer(null);
+      });
+
+      // ── Call busy ──
+      s.on('call-busy', ({ targetUid, message }) => {
+        console.log('[Socket] Call busy:', targetUid, message);
+        setCallState('idle');
+        setCallPeer(null);
+      });
+
+      // ── Server-side error ──
+      s.on('error', ({ message }) => {
+        console.error('[Socket] Server error:', message);
+      });
+    }
+
+    connectSocket();
 
     return () => {
-      s.disconnect();
-      socketRef.current = null;
+      cancelled = true;
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
       setSocket(null);
       setIsConnected(false);
+      if (endCallTimerRef.current) {
+        clearTimeout(endCallTimerRef.current);
+        endCallTimerRef.current = null;
+      }
     };
   }, [user?.uid, user?.displayName]);
 
@@ -204,18 +273,35 @@ export function SocketProvider({ user, children }) {
     }
   }, [incomingCallInfo]);
 
-  // ── End current call ──
-  const endCall = useCallback(() => {
+  // ── End current call (accepts optional duration) ──
+  const endCall = useCallback((duration) => {
     if (!socketRef.current) return;
 
     const peer = callPeerRef.current;
     if (peer?.socketId) {
-      socketRef.current.emit('end-call', { targetSocketId: peer.socketId });
+      socketRef.current.emit('end-call', {
+        targetSocketId: peer.socketId,
+        duration: duration || 0,
+      });
     }
 
-    setCallState('idle');
+    setCallEndInfo({
+      peerName: peer?.name || 'Unknown',
+      duration: duration || 0,
+      reason: 'You ended the call',
+    });
+    setCallState('ended');
     setCallPeer(null);
+    setCallRoom(null);
     setIncomingCallInfo(null);
+
+    // Auto-dismiss after 3 seconds
+    if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
+    endCallTimerRef.current = setTimeout(() => {
+      setCallState('idle');
+      setCallEndInfo(null);
+      endCallTimerRef.current = null;
+    }, 3000);
   }, []);
 
   return (
@@ -233,6 +319,8 @@ export function SocketProvider({ user, children }) {
         endCall,
         setCallState,
         setCallPeer,
+        callEndInfo,
+        callRoom,
       }}
     >
       {children}
