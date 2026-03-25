@@ -173,15 +173,38 @@ export function SocketProvider({ user, children }) {
       // ── Call failed (user offline) ──
       s.on('call-failed', ({ reason, message }) => {
         console.log('[Socket] Call failed:', reason, message);
-        setCallState('idle');
+        setCallEndInfo({
+          peerName: callPeerRef.current?.name || 'User',
+          duration: 0,
+          reason: reason === 'offline' ? 'User is not online' : (message || 'Call failed'),
+        });
+        setCallState('ended');
         setCallPeer(null);
+        // Auto-dismiss after 3 seconds
+        if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
+        endCallTimerRef.current = setTimeout(() => {
+          setCallState('idle');
+          setCallEndInfo(null);
+          endCallTimerRef.current = null;
+        }, 3000);
       });
 
       // ── Call busy ──
       s.on('call-busy', ({ targetUid, message }) => {
         console.log('[Socket] Call busy:', targetUid, message);
-        setCallState('idle');
+        setCallEndInfo({
+          peerName: callPeerRef.current?.name || 'User',
+          duration: 0,
+          reason: 'User is busy on another call',
+        });
+        setCallState('ended');
         setCallPeer(null);
+        if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
+        endCallTimerRef.current = setTimeout(() => {
+          setCallState('idle');
+          setCallEndInfo(null);
+          endCallTimerRef.current = null;
+        }, 3000);
       });
 
       // ── Server-side error ──
@@ -256,7 +279,7 @@ export function SocketProvider({ user, children }) {
       autoRejectTimerRef.current = null;
     }
 
-    socketRef.current.emit('accept-call', { callerSocketId });
+    socketRef.current.emit('accept-call', { callerSocketId, callerUid: callerUid || null });
   }, [incomingCallInfo]);
 
   // ── Reject incoming call ──
