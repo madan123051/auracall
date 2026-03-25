@@ -50,7 +50,7 @@ const activeCallRooms = new Map();
 // ── Rate limiting: socketId → { count, resetTime } ──
 const rateLimitMap = new Map();
 
-const RATE_LIMIT_MAX = 10; // max events per second
+const RATE_LIMIT_MAX = 30; // max events per second (increased for WebRTC bursts)
 const RATE_LIMIT_WINDOW = 1000; // 1 second
 
 // ── UID → socketId lookup ──
@@ -172,6 +172,11 @@ app.get('/api/turn-credentials', (req, res) => {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
+    // ── Free Open Relay TURN servers (relay fallback for mobile carrier NAT) ──
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ];
   // Add TURN if configured via TURN_URL env var
   if (process.env.TURN_URL) {
@@ -449,10 +454,8 @@ io.on('connection', (socket) => {
     broadcastOnlineUsers();
   });
 
-  // ── WebRTC offer ──
+  // ── WebRTC offer ── (NO rate limit — WebRTC signaling needs burst capacity)
   socket.on('offer', ({ targetSocketId, offer }) => {
-    if (!checkRateLimit(socket.id)) return;
-
     if (!isValidTarget(targetSocketId)) return;
 
     console.log(`📡  Offer from ${socket.id} → ${targetSocketId}`);
@@ -462,10 +465,8 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ── WebRTC answer ──
+  // ── WebRTC answer ── (NO rate limit)
   socket.on('answer', ({ targetSocketId, answer }) => {
-    if (!checkRateLimit(socket.id)) return;
-
     if (!isValidTarget(targetSocketId)) return;
 
     console.log(`📡  Answer from ${socket.id} → ${targetSocketId}`);
@@ -475,10 +476,8 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ── ICE candidate ──
+  // ── ICE candidate ── (NO rate limit — mobile devices send 15-20+ candidates in bursts)
   socket.on('ice-candidate', ({ targetSocketId, candidate }) => {
-    if (!checkRateLimit(socket.id)) return;
-
     if (!isValidTarget(targetSocketId)) return;
 
     io.to(targetSocketId).emit('ice-candidate', {
