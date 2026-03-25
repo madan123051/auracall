@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useSocket } from '../lib/socket';
-import { startRingtone, stopRingtone } from '../lib/sounds';
+import { startRingtone, stopRingtone, warmUpAudio } from '../lib/sounds';
 
 const COLORS = {
   bgDeep: '#070B10',
@@ -84,8 +84,9 @@ export default function IncomingCallOverlay() {
     };
   }, []);
 
-  // Handle accept — stop ringtone first
+  // Handle accept — unlock audio + stop ringtone first
   const handleAccept = () => {
+    warmUpAudio(); // Unlock AudioContext on user gesture for Mobile Safari
     stopRingtone();
     acceptCall();
   };
