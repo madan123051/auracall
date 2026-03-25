@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../lib/socket';
+import { startDialingTone, stopDialingTone, playEndCallBeep } from '../lib/sounds';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
 
@@ -52,6 +53,10 @@ const KEYFRAMES_CSS = `
     0% { opacity: 0; transform: translateY(20px); }
     100% { opacity: 1; transform: translateY(0); }
   }
+  @keyframes vcSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
 `;
 
 export default function VideoCall({ userName, peerInfo }) {
@@ -68,13 +73,14 @@ export default function VideoCall({ userName, peerInfo }) {
   const [callTimer, setCallTimer] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [remoteMediaState, setRemoteMediaState] = useState({ audio: true, video: true });
-  const [connectionQuality, setConnectionQuality] = useState('good'); // 'excellent' | 'good' | 'poor' | 'reconnecting'
+  const [connectionQuality, setConnectionQuality] = useState('good');
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [iceServersConfig, setIceServersConfig] = useState(null);
   const [currentBitrateLabel, setCurrentBitrateLabel] = useState('high');
   const [networkStats, setNetworkStats] = useState({ packetLoss: 0, jitter: 0, rtt: 0, bitrate: 0 });
   const [isCallConnected, setIsCallConnected] = useState(false);
-  const [mediaSetupPhase, setMediaSetupPhase] = useState('camera'); // 'camera' | 'connecting' | 'ready'
+  const [mediaSetupPhase, setMediaSetupPhase] = useState('camera');
+  const [mediaReady, setMediaReady] = useState(false); // NEW: track when getUserMedia is done
 
   // ── Refs ──
   const localVideoRef = useRef(null);
@@ -84,6 +90,7 @@ export default function VideoCall({ userName, peerInfo }) {
   const timerRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
+  const pendingOfferRef = useRef(null); // NEW: queue offer if media not ready
   const statsIntervalRef = useRef(null);
   const prevStatsRef = useRef(null);
   const iceRestartAttemptRef = useRef(0);
@@ -116,6 +123,18 @@ export default function VideoCall({ userName, peerInfo }) {
       }
     };
   }, []);
+
+  // ── Dialing Tone: play when calling, stop when connected/ended ──
+  useEffect(() => {
+    if (callState === 'calling') {
+      startDialingTone();
+    } else {
+      stopDialingTone();
+    }
+    return () => {
+      stopDialingTone();
+    };
+  }, [callState]);
 
   // ── Format timer ──
   const formatTime = (secs) => {
@@ -180,6 +199,11 @@ export default function VideoCall({ userName, peerInfo }) {
 
   // ── End call (local cleanup + context) ──
   const handleEndCall = useCallback(() => {
+    // Stop dialing tone
+    stopDialingTone();
+    // Play end call beep
+    playEndCallBeep();
+
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -208,9 +232,9 @@ export default function VideoCall({ userName, peerInfo }) {
     }
 
     pendingCandidatesRef.current = [];
+    pendingOfferRef.current = null;
     currentTargetRef.current = null;
 
-    // Pass the call duration to the context endCall
     contextEndCall(callTimer);
   }, [contextEndCall, callTimer]);
 
@@ -259,10 +283,18 @@ export default function VideoCall({ userName, peerInfo }) {
     };
 
     pc.ontrack = (event) => {
+      console.log('[VideoCall] Remote track received:', event.track.kind);
       const [stream] = event.streams;
       setRemoteStream(stream);
+      // Explicitly set srcObject and play to handle autoplay policy
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = stream;
+        const playPromise = remoteVideoRef.current.play();
+        if (playPromise) {
+          playPromise.catch((err) => {
+            console.warn('[VideoCall] Autoplay blocked, will retry on user interaction:', err);
+          });
+        }
       }
     };
 
@@ -295,7 +327,6 @@ export default function VideoCall({ userName, peerInfo }) {
         case 'disconnected':
           setConnectionQuality('reconnecting');
           setIsReconnecting(true);
-          // Wait 3 seconds then try ICE restart
           disconnectTimerRef.current = setTimeout(() => {
             if (peerConnectionRef.current && peerConnectionRef.current.iceConnectionState === 'disconnected') {
               attemptIceRestart();
@@ -308,7 +339,6 @@ export default function VideoCall({ userName, peerInfo }) {
           setIsReconnecting(true);
           if (iceRestartAttemptRef.current < 3) {
             attemptIceRestart();
-            // If still failed after 5 more seconds, end call
             failedTimerRef.current = setTimeout(() => {
               if (peerConnectionRef.current && peerConnectionRef.current.iceConnectionState === 'failed') {
                 console.log('[VideoCall] ICE failed after restart, ending call');
@@ -329,11 +359,14 @@ export default function VideoCall({ userName, peerInfo }) {
       }
     };
 
-    // Add local tracks
+    // ── CRITICAL FIX: Add local tracks to peer connection ──
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current);
       });
+      console.log('[VideoCall] Added', localStreamRef.current.getTracks().length, 'local tracks to PC');
+    } else {
+      console.warn('[VideoCall] No local stream yet when creating PC — tracks will be added later');
     }
 
     peerConnectionRef.current = pc;
@@ -377,22 +410,20 @@ export default function VideoCall({ userName, peerInfo }) {
 
         const totalPackets = packetsReceived + packetsLost;
         const packetLossPercent = totalPackets > 0 ? (packetsLost / totalPackets) * 100 : 0;
-        const jitterMs = jitter * 1000; // convert to ms
+        const jitterMs = jitter * 1000;
 
-        // Calculate bitrate delta
         let bitrate = 0;
         if (prevStatsRef.current && timestamp) {
           const timeDiff = (timestamp - prevStatsRef.current.timestamp) / 1000;
           if (timeDiff > 0) {
             const bytesDiff = (bytesReceived - prevStatsRef.current.bytesReceived) + (bytesSent - prevStatsRef.current.bytesSent);
-            bitrate = (bytesDiff * 8) / timeDiff; // bits per second
+            bitrate = (bytesDiff * 8) / timeDiff;
           }
         }
         prevStatsRef.current = { timestamp, bytesReceived, bytesSent, packetsLost };
 
         setNetworkStats({ packetLoss: packetLossPercent, jitter: jitterMs, rtt: roundTripTime * 1000, bitrate });
 
-        // Adaptive quality
         if (packetLossPercent > 5 || jitterMs > 50) {
           setConnectionQuality('poor');
           setBitrate('low');
@@ -401,7 +432,6 @@ export default function VideoCall({ userName, peerInfo }) {
           setBitrate('medium');
         } else {
           setConnectionQuality('excellent');
-          // Gradually increase quality
           const currentIdx = QUALITY_ORDER.indexOf(currentBitrateLabel);
           if (currentIdx < QUALITY_ORDER.length - 1) {
             setBitrate(QUALITY_ORDER[currentIdx + 1]);
@@ -431,12 +461,14 @@ export default function VideoCall({ userName, peerInfo }) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
-          audio: true,
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         setLocalStream(stream);
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+        setMediaReady(true); // Signal that media is ready
+        console.log('[VideoCall] Got HD media:', stream.getTracks().map(t => t.kind).join(', '));
         return;
       } catch (err) {
         console.warn('[VideoCall] HD media failed, trying fallback:', err);
@@ -446,12 +478,14 @@ export default function VideoCall({ userName, peerInfo }) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } },
-          audio: true,
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         setLocalStream(stream);
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+        setMediaReady(true);
+        console.log('[VideoCall] Got 480p media');
         return;
       } catch (err) {
         console.warn('[VideoCall] 480p media failed, trying audio-only:', err);
@@ -459,14 +493,21 @@ export default function VideoCall({ userName, peerInfo }) {
 
       // Audio only fallback
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         setLocalStream(stream);
         localStreamRef.current = stream;
         setIsCameraOff(true);
+        setMediaReady(true);
+        console.log('[VideoCall] Got audio-only media');
         return;
       } catch (err) {
         console.error('[VideoCall] No media available:', err);
+        // Even with no media, mark as ready so signaling can proceed
+        setMediaReady(true);
       }
     }
 
@@ -477,23 +518,63 @@ export default function VideoCall({ userName, peerInfo }) {
     };
   }, []);
 
-  // ── Socket event listeners for WebRTC signaling ──
+  // ── CRITICAL FIX: Process queued offer once media is ready ──
   useEffect(() => {
-    if (!socket) return;
+    if (!mediaReady || !pendingOfferRef.current || !socket) return;
 
-    const handleOffer = async ({ senderSocketId, offer }) => {
-      console.log('[VideoCall] Received offer from', senderSocketId);
+    const { senderSocketId, offer } = pendingOfferRef.current;
+    pendingOfferRef.current = null;
+
+    console.log('[VideoCall] Processing queued offer now that media is ready');
+
+    async function processOffer() {
       currentTargetRef.current = senderSocketId;
       setMediaSetupPhase('connecting');
-
-      // Update callPeer socketId if needed
       setCallPeer((prev) => prev ? { ...prev, socketId: senderSocketId } : prev);
 
       try {
         const pc = createPeerConnection();
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-        // Flush pending ICE candidates
+        for (const candidate of pendingCandidatesRef.current) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        pendingCandidatesRef.current = [];
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('answer', { targetSocketId: senderSocketId, answer });
+        console.log('[VideoCall] Sent answer after media ready');
+      } catch (err) {
+        console.error('[VideoCall] Error processing queued offer:', err);
+      }
+    }
+
+    processOffer();
+  }, [mediaReady, socket, createPeerConnection, setCallPeer]);
+
+  // ── Socket event listeners for WebRTC signaling ──
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleOffer = async ({ senderSocketId, offer }) => {
+      console.log('[VideoCall] Received offer from', senderSocketId);
+
+      // ── CRITICAL FIX: If media not ready yet, queue the offer ──
+      if (!localStreamRef.current) {
+        console.log('[VideoCall] Media not ready yet — queuing offer');
+        pendingOfferRef.current = { senderSocketId, offer };
+        return;
+      }
+
+      currentTargetRef.current = senderSocketId;
+      setMediaSetupPhase('connecting');
+      setCallPeer((prev) => prev ? { ...prev, socketId: senderSocketId } : prev);
+
+      try {
+        const pc = createPeerConnection();
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
         for (const candidate of pendingCandidatesRef.current) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         }
@@ -513,7 +594,6 @@ export default function VideoCall({ userName, peerInfo }) {
         if (peerConnectionRef.current) {
           await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
 
-          // Flush pending ICE candidates
           for (const candidate of pendingCandidatesRef.current) {
             await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
           }
@@ -538,6 +618,9 @@ export default function VideoCall({ userName, peerInfo }) {
 
     const handleCallEnded = ({ senderName, duration }) => {
       console.log('[VideoCall] Call ended by', senderName);
+      stopDialingTone();
+      playEndCallBeep();
+
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;
@@ -555,7 +638,7 @@ export default function VideoCall({ userName, peerInfo }) {
         statsIntervalRef.current = null;
       }
       pendingCandidatesRef.current = [];
-      // Note: the socket.js call-ended handler will set callState to 'ended' and show the end screen
+      pendingOfferRef.current = null;
     };
 
     const handleReceiveMessage = (msg) => {
@@ -597,8 +680,6 @@ export default function VideoCall({ userName, peerInfo }) {
     if (!iceServersConfig) return;
     if (!localStreamRef.current) return;
 
-    // The call was accepted (callState changed to 'connected' in context)
-    // Create offer and send
     async function startCall() {
       console.log('[VideoCall] Caller: creating offer');
       setMediaSetupPhase('connecting');
@@ -613,7 +694,6 @@ export default function VideoCall({ userName, peerInfo }) {
       }
     }
 
-    // Small delay to ensure everything is set up
     const timer = setTimeout(startCall, 300);
     return () => clearTimeout(timer);
   }, [socket, iceServersConfig, createPeerConnection, handleEndCall, localStream]);
@@ -633,11 +713,25 @@ export default function VideoCall({ userName, peerInfo }) {
     };
   }, [isCallConnected]);
 
+  // ── Attach remote stream to video element when it changes ──
+  useEffect(() => {
+    if (remoteStream && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      const playPromise = remoteVideoRef.current.play();
+      if (playPromise) {
+        playPromise.catch((err) => {
+          console.warn('[VideoCall] Remote video autoplay blocked:', err);
+        });
+      }
+    }
+  }, [remoteStream]);
+
   // ── Cleanup on unmount ──
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      stopDialingTone();
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;
@@ -833,7 +927,6 @@ export default function VideoCall({ userName, peerInfo }) {
 
   const peerName = peerInfo?.name || 'Unknown';
 
-  // Determine calling screen subtitle
   const getCallingSubtitle = () => {
     if (callState === 'calling') {
       return 'Ringing...';
@@ -1032,7 +1125,7 @@ export default function VideoCall({ userName, peerInfo }) {
               border: `3px solid ${COLORS.border}`,
               borderTopColor: COLORS.teal,
               borderRadius: '50%',
-              animation: 'vcPulse 1s linear infinite',
+              animation: 'vcSpin 1s linear infinite',
               marginBottom: 16,
             }}
           />
@@ -1226,7 +1319,7 @@ export default function VideoCall({ userName, peerInfo }) {
                 }}
               >
                 {!msg.isMine && (
-                  <p style={{ fontSize: 11, color: COLORS.teal, marginBottom: 4, fontWeight: 600, margin: 0, marginBottom: 4 }}>
+                  <p style={{ fontSize: 11, color: COLORS.teal, fontWeight: 600, margin: 0, marginBottom: 4 }}>
                     {msg.senderName}
                   </p>
                 )}

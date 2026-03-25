@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useSocket } from '../lib/socket';
+import { startRingtone, stopRingtone } from '../lib/sounds';
 
 const COLORS = {
   bgDeep: '#070B10',
@@ -27,10 +28,11 @@ const keyframesStyle = `
     0% { opacity: 0; transform: scale(0.9); }
     100% { opacity: 1; transform: scale(1); }
   }
-  @keyframes icoBtnHover {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.08); }
-    100% { transform: scale(1); }
+  @keyframes icoShake {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(15deg); }
+    50% { transform: rotate(-15deg); }
+    75% { transform: rotate(10deg); }
   }
 `;
 
@@ -38,6 +40,18 @@ export default function IncomingCallOverlay() {
   const { callState, incomingCallInfo, acceptCall, rejectCall } = useSocket();
   const autoRejectRef = useRef(null);
   const styleRef = useRef(null);
+
+  // ── Ringtone: play when incoming, stop when not ──
+  useEffect(() => {
+    if (callState === 'incoming' && incomingCallInfo) {
+      startRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => {
+      stopRingtone();
+    };
+  }, [callState, incomingCallInfo]);
 
   // Auto-reject after 30 seconds
   useEffect(() => {
@@ -69,6 +83,18 @@ export default function IncomingCallOverlay() {
       }
     };
   }, []);
+
+  // Handle accept — stop ringtone first
+  const handleAccept = () => {
+    stopRingtone();
+    acceptCall();
+  };
+
+  // Handle reject — stop ringtone first
+  const handleReject = () => {
+    stopRingtone();
+    rejectCall();
+  };
 
   if (callState !== 'incoming' || !incomingCallInfo) return null;
 
@@ -125,7 +151,7 @@ export default function IncomingCallOverlay() {
       </div>
 
       {/* Caller info */}
-      <div style={{ textAlign: 'center', zIndex: 1, marginBottom: 40 }}>
+      <div style={{ textAlign: 'center', zIndex: 1, marginBottom: 12 }}>
         <h2
           style={{
             fontSize: 28,
@@ -150,12 +176,23 @@ export default function IncomingCallOverlay() {
         </p>
       </div>
 
+      {/* Phone icon shaking */}
+      <div
+        style={{
+          fontSize: 36,
+          marginBottom: 32,
+          animation: 'icoShake 0.5s ease-in-out infinite',
+        }}
+      >
+        📞
+      </div>
+
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 48, zIndex: 1 }}>
         {/* Decline */}
         <div style={{ textAlign: 'center' }}>
           <button
-            onClick={rejectCall}
+            onClick={handleReject}
             style={{
               width: 68,
               height: 68,
@@ -191,7 +228,7 @@ export default function IncomingCallOverlay() {
         {/* Accept */}
         <div style={{ textAlign: 'center' }}>
           <button
-            onClick={acceptCall}
+            onClick={handleAccept}
             style={{
               width: 68,
               height: 68,
