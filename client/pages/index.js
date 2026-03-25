@@ -4,6 +4,7 @@ import { SocketProvider, useSocket } from '../lib/socket';
 import Dashboard from '../components/Dashboard';
 import VideoCall from '../components/VideoCall';
 import IncomingCallOverlay from '../components/IncomingCallOverlay';
+import { warmUpAudio } from '../lib/sounds';
 
 const COLORS = {
   bgDeep: '#070B10',
@@ -240,8 +241,25 @@ function AppContent() {
   const { currentUser } = useAuth();
   const { callState, callPeer, callUser, endCall, callEndInfo } = useSocket();
 
+  // ── Unlock Web Audio on first user interaction (for iOS Safari ringtone) ──
+  React.useEffect(() => {
+    const unlock = () => {
+      warmUpAudio();
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click', unlock);
+    };
+    document.addEventListener('touchstart', unlock, { once: true });
+    document.addEventListener('click', unlock, { once: true });
+    return () => {
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click', unlock);
+    };
+  }, []);
+
   const handleStartCall = React.useCallback(
     (friend, type) => {
+      // Unlock AudioContext on user gesture so dialing tone plays on Mobile Safari
+      warmUpAudio();
       // friend has: uid, displayName, photoURL
       // Call by UID so we don't need their socketId
       callUser(null, friend.displayName, friend.uid, type || 'video');

@@ -674,14 +674,22 @@ export default function VideoCall({ userName, peerInfo }) {
     };
   }, [socket, createPeerConnection, handleEndCall, setCallPeer, setCallState]);
 
-  // ── Initiate WebRTC if we are the caller — wait for ICE config + local stream ──
+  // ── Initiate WebRTC if we are the caller — wait for receiver to ACCEPT first ──
+  // CRITICAL FIX: Previously the offer was sent during 'calling' state, before the
+  // receiver accepted. For UID-based calls, targetSocketId was null at that point,
+  // so the offer was lost and both sides got stuck. Now we wait for:
+  //   1. callState === 'connected' (receiver accepted → server sent call-accepted)
+  //   2. Valid currentTargetRef.current (accepter's socketId)
+  //   3. ICE config + local media stream ready
   useEffect(() => {
     if (!socket || !isCallerRef.current) return;
     if (!iceServersConfig) return;
     if (!localStreamRef.current) return;
+    if (callState !== 'connected') return; // Wait for receiver to accept
+    if (!currentTargetRef.current) return; // Need valid target socketId
 
     async function startCall() {
-      console.log('[VideoCall] Caller: creating offer');
+      console.log('[VideoCall] Caller: creating offer to', currentTargetRef.current);
       setMediaSetupPhase('connecting');
       try {
         const pc = createPeerConnection();
@@ -696,7 +704,7 @@ export default function VideoCall({ userName, peerInfo }) {
 
     const timer = setTimeout(startCall, 300);
     return () => clearTimeout(timer);
-  }, [socket, iceServersConfig, createPeerConnection, handleEndCall, localStream]);
+  }, [socket, iceServersConfig, createPeerConnection, handleEndCall, localStream, callState, peerInfo?.socketId]);
 
   // ── Call timer ──
   useEffect(() => {

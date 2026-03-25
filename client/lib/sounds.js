@@ -205,6 +205,27 @@ export function playEndCallBeep() {
 }
 
 
+// ── Warm up AudioContext (call from user gesture for iOS Safari) ──
+// Mobile Safari blocks Web Audio API unless AudioContext is created/resumed
+// during a user gesture (tap/click). Call this from button handlers to unlock audio.
+export function warmUpAudio() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    // Play a silent buffer to fully unlock audio on iOS Safari
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch (e) {
+    console.warn('[Sounds] warmUpAudio error:', e);
+  }
+}
+
+
 // ── Cleanup ──
 export function cleanupAudio() {
   stopDialingTone();
