@@ -39,6 +39,19 @@ const KEYFRAMES_CSS = `
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+  @keyframes vcAvatarPulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0,191,166,0.4); }
+    50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(0,191,166,0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0,191,166,0); }
+  }
+  @keyframes vcRingPulse {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(2); opacity: 0; }
+  }
+  @keyframes vcSlideUp {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
 `;
 
 export default function VideoCall({ userName, peerInfo }) {
@@ -61,6 +74,7 @@ export default function VideoCall({ userName, peerInfo }) {
   const [currentBitrateLabel, setCurrentBitrateLabel] = useState('high');
   const [networkStats, setNetworkStats] = useState({ packetLoss: 0, jitter: 0, rtt: 0, bitrate: 0 });
   const [isCallConnected, setIsCallConnected] = useState(false);
+  const [mediaSetupPhase, setMediaSetupPhase] = useState('camera'); // 'camera' | 'connecting' | 'ready'
 
   // ── Refs ──
   const localVideoRef = useRef(null);
@@ -196,8 +210,9 @@ export default function VideoCall({ userName, peerInfo }) {
     pendingCandidatesRef.current = [];
     currentTargetRef.current = null;
 
-    contextEndCall();
-  }, [contextEndCall]);
+    // Pass the call duration to the context endCall
+    contextEndCall(callTimer);
+  }, [contextEndCall, callTimer]);
 
   // ── ICE restart ──
   const attemptIceRestart = useCallback(async () => {
@@ -256,11 +271,16 @@ export default function VideoCall({ userName, peerInfo }) {
       console.log('[VideoCall] ICE state:', state);
 
       switch (state) {
+        case 'checking':
+          setMediaSetupPhase('connecting');
+          break;
+
         case 'connected':
         case 'completed':
           setIsReconnecting(false);
           setIsCallConnected(true);
           setConnectionQuality('good');
+          setMediaSetupPhase('ready');
           iceRestartAttemptRef.current = 0;
           if (disconnectTimerRef.current) {
             clearTimeout(disconnectTimerRef.current);
@@ -405,6 +425,8 @@ export default function VideoCall({ userName, peerInfo }) {
     let cancelled = false;
 
     async function getMedia() {
+      setMediaSetupPhase('camera');
+
       // Try HD first
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -462,6 +484,7 @@ export default function VideoCall({ userName, peerInfo }) {
     const handleOffer = async ({ senderSocketId, offer }) => {
       console.log('[VideoCall] Received offer from', senderSocketId);
       currentTargetRef.current = senderSocketId;
+      setMediaSetupPhase('connecting');
 
       // Update callPeer socketId if needed
       setCallPeer((prev) => prev ? { ...prev, socketId: senderSocketId } : prev);
@@ -513,7 +536,7 @@ export default function VideoCall({ userName, peerInfo }) {
       }
     };
 
-    const handleCallEnded = ({ senderName }) => {
+    const handleCallEnded = ({ senderName, duration }) => {
       console.log('[VideoCall] Call ended by', senderName);
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -532,9 +555,7 @@ export default function VideoCall({ userName, peerInfo }) {
         statsIntervalRef.current = null;
       }
       pendingCandidatesRef.current = [];
-      // Reset context state
-      setCallPeer(null);
-      setCallState('idle');
+      // Note: the socket.js call-ended handler will set callState to 'ended' and show the end screen
     };
 
     const handleReceiveMessage = (msg) => {
@@ -580,6 +601,7 @@ export default function VideoCall({ userName, peerInfo }) {
     // Create offer and send
     async function startCall() {
       console.log('[VideoCall] Caller: creating offer');
+      setMediaSetupPhase('connecting');
       try {
         const pc = createPeerConnection();
         const offer = await pc.createOffer();
@@ -681,7 +703,7 @@ export default function VideoCall({ userName, peerInfo }) {
   };
 
   // ── UI Components ──
-  const Avatar = ({ name, size = 48, fontSize = 20 }) => (
+  const Avatar = ({ name, size = 48, fontSize = 20, animate = false }) => (
     <div
       style={{
         width: size,
@@ -695,6 +717,7 @@ export default function VideoCall({ userName, peerInfo }) {
         fontWeight: 700,
         color: '#fff',
         flexShrink: 0,
+        animation: animate ? 'vcAvatarPulse 2s ease-in-out infinite' : 'none',
       }}
     >
       {(name || '?')[0].toUpperCase()}
@@ -810,6 +833,20 @@ export default function VideoCall({ userName, peerInfo }) {
 
   const peerName = peerInfo?.name || 'Unknown';
 
+  // Determine calling screen subtitle
+  const getCallingSubtitle = () => {
+    if (callState === 'calling') {
+      return 'Ringing...';
+    }
+    if (mediaSetupPhase === 'camera') {
+      return 'Setting up camera...';
+    }
+    if (mediaSetupPhase === 'connecting') {
+      return 'Establishing connection...';
+    }
+    return `Connecting to ${peerName}...`;
+  };
+
   // ═════════════════════════════════════════════
   //  RENDER
   // ═════════════════════════════════════════════
@@ -824,17 +861,53 @@ export default function VideoCall({ userName, peerInfo }) {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: COLORS.bgDeep,
+          background: `radial-gradient(ellipse at center, ${COLORS.bgPrimary} 0%, ${COLORS.bgDeep} 70%)`,
           gap: 32,
+          animation: 'vcFadeIn 0.4s ease-out',
         }}
       >
-        <Avatar name={peerName} size={90} fontSize={36} />
+        {/* Animated avatar with pulse rings */}
+        <div style={{ position: 'relative', width: 120, height: 120 }}>
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: `2px solid ${COLORS.teal}`,
+                animation: `vcRingPulse 2s ease-out ${i * 0.6}s infinite`,
+              }}
+            />
+          ))}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 44,
+              fontWeight: 700,
+              color: '#fff',
+              boxShadow: `0 0 40px ${COLORS.teal}33`,
+              animation: 'vcAvatarPulse 2s ease-in-out infinite',
+            }}
+          >
+            {(peerName || '?')[0].toUpperCase()}
+          </div>
+        </div>
 
-        <div style={{ textAlign: 'center' }}>
-          <h2 style={{ fontSize: 22, fontWeight: 600, color: COLORS.text, margin: 0 }}>
-            {callState === 'calling' ? `Calling ${peerName}` : `Connecting to ${peerName}`}
+        <div style={{ textAlign: 'center', animation: 'vcSlideUp 0.5s ease-out' }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: COLORS.text, margin: 0 }}>
+            {peerName}
           </h2>
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 16 }}>
+          <p style={{ fontSize: 15, color: COLORS.teal, margin: 0, marginTop: 8 }}>
+            {getCallingSubtitle()}
+          </p>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 20 }}>
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
@@ -854,15 +927,20 @@ export default function VideoCall({ userName, peerInfo }) {
           onClick={handleEndCall}
           style={{
             marginTop: 24,
-            padding: '12px 36px',
+            padding: '14px 40px',
             borderRadius: 30,
-            border: `1px solid ${COLORS.border}`,
-            background: 'transparent',
-            color: COLORS.reject,
+            border: 'none',
+            background: COLORS.reject,
+            color: '#fff',
             fontSize: 15,
-            fontWeight: 500,
+            fontWeight: 600,
             cursor: 'pointer',
+            boxShadow: `0 4px 20px ${COLORS.reject}44`,
+            transition: 'transform 0.15s, box-shadow 0.15s',
+            animation: 'vcSlideUp 0.6s ease-out',
           }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
         >
           Cancel
         </button>
@@ -904,6 +982,32 @@ export default function VideoCall({ userName, peerInfo }) {
           <p style={{ color: COLORS.textSecondary, fontSize: 15 }}>
             {!remoteStream ? 'Connecting video...' : 'Camera Off'}
           </p>
+        </div>
+      )}
+
+      {/* Remote audio muted indicator */}
+      {!remoteMediaState.audio && remoteStream && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 80,
+            left: 20,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            borderRadius: 20,
+            padding: '6px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            zIndex: 15,
+            animation: 'vcFadeIn 0.3s ease-out',
+          }}
+        >
+          <span style={{ fontSize: 16 }}>🔇</span>
+          <span style={{ color: COLORS.textSecondary, fontSize: 12, fontWeight: 500 }}>
+            {peerName} is muted
+          </span>
         </div>
       )}
 
