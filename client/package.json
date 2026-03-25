@@ -1,16 +1,17 @@
 {
   "name": "auracall-client",
   "version": "2.0.0",
-  "description": "AuraCall — Pro Video Call & Chat UI",
+  "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
-    "next": "^14.0.4",
+    "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.7.0",
+    "firebase": "^10.7.0"
   }
 }
