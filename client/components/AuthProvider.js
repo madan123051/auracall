@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import { onAuthStateChanged, signInWithGoogle, signOutUser } from "../lib/auth";
+import { onAuthStateChanged, signInWithGoogle, signOutUser, signInAnonymouslyUser } from "../lib/auth";
 import { setupPresence } from "../lib/presence";
 
 const AuthContext = createContext({
   currentUser: null,
   loading: true,
   login: async () => {},
+  loginWithGoogle: async () => {},
+  loginAnonymously: async () => {},
   logout: async () => {},
 });
 
@@ -32,7 +34,7 @@ export function AuthProvider({ children }) {
 
       // Setup presence for logged-in user
       if (user) {
-        console.log("[AuthProvider] Setting up presence for:", user.displayName);
+        console.log("[AuthProvider] Setting up presence for:", user.displayName || user.uid);
         presenceCleanupRef.current = setupPresence(user.uid);
       }
     });
@@ -46,12 +48,24 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  async function login() {
+  // Google Sign-In
+  async function loginWithGoogle() {
     try {
       const user = await signInWithGoogle();
       return user;
     } catch (error) {
-      console.error("[AuthProvider] Login error:", error);
+      console.error("[AuthProvider] Google login error:", error);
+      throw error;
+    }
+  }
+
+  // Anonymous / Guest Sign-In
+  async function loginAnonymously() {
+    try {
+      const user = await signInAnonymouslyUser();
+      return user;
+    } catch (error) {
+      console.error("[AuthProvider] Anonymous login error:", error);
       throw error;
     }
   }
@@ -73,7 +87,9 @@ export function AuthProvider({ children }) {
   const value = {
     currentUser,
     loading,
-    login,
+    login: loginWithGoogle,       // backward compatible
+    loginWithGoogle,              // new: used by index.js
+    loginAnonymously,             // new: used by index.js
     logout,
   };
 
