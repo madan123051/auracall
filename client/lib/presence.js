@@ -1,14 +1,60 @@
-import { ref, onValue, onDisconnect, set, serverTimestamp as rtdbServerTimestamp, get } from "firebase/database";
-import { doc, updateDoc, serverTimestamp as firestoreServerTimestamp } from "firebase/firestore";
-import { rtdb, db } from "./firebase";
+/**
+ * =============================================================================
+ * AuraCall Presence System — Firestore Heartbeat
+ * =============================================================================
+ * Ported from Lumina's activityStatusService approach.
+ * Uses Firestore instead of RTDB — no external server needed.
+ *
+ * How it works:
+ * 1. Writes { isOnline: true, lastSeen: serverTimestamp() } every 60s
+ * 2. On tab hide/close → marks offline
+ * 3. Other users read presence via onSnapshot on the users/{uid} doc
+ * 4. Stale detection: if lastSeen > 2 minutes ago, consider offline
+ * =============================================================================
+ */
+
+import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
+
+// ── Constants ──
+const HEARTBEAT_INTERVAL = 60000; // 1 minute
+const STALE_THRESHOLD = 2 * 60 * 1000; // 2 minutes — if no heartbeat, user is offline
+
+// ── Module state ──
+let heartbeatInterval = null;
+let trackedUserId = null;
+let visibilityHandler = null;
+let unloadHandler = null;
+
+/**
+ * Write presence data to Firestore users/{uid} doc (merge mode).
+ * Uses setDoc with merge so it works even if the user doc doesn't exist yet.
+ */
+async function writePresence(uid, isOnline) {
+  try {
+    const userRef = doc(db, "users", uid);
+    await setDoc(
+      userRef,
+      {
+        isOnline: isOnline,
+        lastSeen: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    // Don't spam console — this can happen during page unload
+    if (isOnline) {
+      console.error("[Presence] Firestore write error:", error);
+    }
+  }
+}
 
 /**
  * Setup presence tracking for a user.
- * Uses Firebase Realtime Database for low-latency presence detection.
- * Also syncs presence to Firestore user doc.
+ * Call this once after login. Returns a cleanup function.
  *
- * @param {string} uid
- * @returns {Function} cleanup function
+ * @param {string} uid - Firebase Auth UID
+ * @returns {Function} cleanup function to call on logout/unmount
  */
 export function setupPresence(uid) {
   if (!uid) {
@@ -16,92 +62,102 @@ export function setupPresence(uid) {
     return () => {};
   }
 
-  const userStatusRef = ref(rtdb, `status/${uid}`);
-  const connectedRef = ref(rtdb, ".info/connected");
+  // Prevent double tracking for same user
+  if (trackedUserId === uid && heartbeatInterval) {
+    return () => cleanupPresence(uid);
+  }
 
-  const isOfflineData = {
-    isOnline: false,
-    lastSeen: rtdbServerTimestamp(),
-  };
+  // Clean up previous tracking if switching users
+  if (trackedUserId && trackedUserId !== uid) {
+    cleanupPresence(trackedUserId);
+  }
 
-  const isOnlineData = {
-    isOnline: true,
-    lastSeen: rtdbServerTimestamp(),
-  };
+  trackedUserId = uid;
 
-  const unsubscribe = onValue(connectedRef, (snapshot) => {
-    if (snapshot.val() === false) {
-      console.log("[Presence] Not connected to RTDB");
-      return;
+  // 1. Immediately mark online
+  writePresence(uid, true);
+
+  // 2. Heartbeat: re-write online status every 60s
+  heartbeatInterval = setInterval(() => {
+    if (trackedUserId === uid) {
+      writePresence(uid, true);
     }
+  }, HEARTBEAT_INTERVAL);
 
-    console.log("[Presence] Connected — setting up presence for:", uid);
-
-    // When disconnected, set status to offline
-    onDisconnect(userStatusRef)
-      .set(isOfflineData)
-      .then(() => {
-        // BUG FIX: Added error handling to set() call.
-        // Without .catch(), if RTDB rules deny this write, it fails SILENTLY
-        // and the user NEVER appears online to others.
-        set(userStatusRef, isOnlineData)
-          .then(() => {
-            console.log("[Presence] ✅ Online status set for:", uid);
-          })
-          .catch((error) => {
-            console.error("[Presence] ❌ Failed to set online status:", error.message);
-            console.error("[Presence] Check Firebase RTDB rules allow write to /status/" + uid);
-            console.error("[Presence] Run: firebase deploy --only database");
-          });
-
-        // Sync to Firestore
-        syncPresenceToFirestore(uid, true);
-      })
-      .catch((error) => {
-        console.error("[Presence] onDisconnect error:", error);
-      });
-  });
-
-  // Also handle browser beforeunload
-  const handleBeforeUnload = () => {
-    set(userStatusRef, isOfflineData);
-    syncPresenceToFirestore(uid, false);
+  // 3. Tab visibility change — go offline when hidden, online when visible
+  visibilityHandler = () => {
+    if (!trackedUserId) return;
+    if (document.visibilityState === "hidden") {
+      writePresence(trackedUserId, false);
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+    } else if (document.visibilityState === "visible") {
+      writePresence(trackedUserId, true);
+      if (!heartbeatInterval) {
+        heartbeatInterval = setInterval(() => {
+          if (trackedUserId) writePresence(trackedUserId, true);
+        }, HEARTBEAT_INTERVAL);
+      }
+    }
   };
 
+  // 4. Page unload — mark offline immediately
+  unloadHandler = () => {
+    if (trackedUserId) {
+      // Use sendBeacon-style approach — setDoc may not complete during unload
+      // but we try anyway. The stale detection handles the rest.
+      writePresence(trackedUserId, false);
+    }
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", visibilityHandler);
+  }
   if (typeof window !== "undefined") {
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("beforeunload", unloadHandler);
   }
 
-  return () => {
-    console.log("[Presence] Cleaning up presence for:", uid);
-    unsubscribe();
-    set(userStatusRef, isOfflineData);
-    syncPresenceToFirestore(uid, false);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    }
-  };
+  console.log("[Presence] Firestore heartbeat tracking started for:", uid);
+
+  return () => cleanupPresence(uid);
 }
 
 /**
- * Sync presence data to the Firestore users document.
+ * Internal cleanup function.
  */
-async function syncPresenceToFirestore(uid, isOnline) {
-  try {
-    const userRef = doc(db, "users", uid);
-    await updateDoc(userRef, {
-      isOnline: isOnline,
-      lastSeen: firestoreServerTimestamp(),
-    });
-  } catch (error) {
-    console.error("[Presence] Firestore sync error:", error);
+function cleanupPresence(uid) {
+  console.log("[Presence] Cleaning up for:", uid);
+
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
+
+  writePresence(uid, false);
+
+  if (visibilityHandler && typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", visibilityHandler);
+    visibilityHandler = null;
+  }
+
+  if (unloadHandler && typeof window !== "undefined") {
+    window.removeEventListener("beforeunload", unloadHandler);
+    unloadHandler = null;
+  }
+
+  trackedUserId = null;
 }
 
 /**
- * Watch a single user's presence status (realtime).
+ * Watch a single user's presence status in real-time.
+ * Uses Firestore onSnapshot — instant updates when the user doc changes.
+ *
+ * Includes stale detection: if isOnline but lastSeen > 2 min ago → offline.
+ *
  * @param {string} uid
- * @param {Function} callback — receives { isOnline, lastSeen }
+ * @param {Function} callback - receives { isOnline: boolean, lastSeen: number|null }
  * @returns {Function} unsubscribe
  */
 export function watchPresence(uid, callback) {
@@ -110,32 +166,54 @@ export function watchPresence(uid, callback) {
     return () => {};
   }
 
-  const userStatusRef = ref(rtdb, `status/${uid}`);
-  const unsubscribe = onValue(
-    userStatusRef,
+  const userRef = doc(db, "users", uid);
+  const unsubscribe = onSnapshot(
+    userRef,
     (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        callback({
-          isOnline: data.isOnline || false,
-          lastSeen: data.lastSeen || null,
-        });
-      } else {
+      if (!snapshot.exists()) {
         callback({ isOnline: false, lastSeen: null });
+        return;
       }
+
+      const data = snapshot.data();
+      let isOnline = data?.isOnline || false;
+      const lastSeenRaw = data?.lastSeen;
+
+      // Convert Firestore Timestamp to millis
+      let lastSeen = null;
+      if (lastSeenRaw) {
+        lastSeen =
+          typeof lastSeenRaw.toMillis === "function"
+            ? lastSeenRaw.toMillis()
+            : typeof lastSeenRaw === "number"
+            ? lastSeenRaw
+            : null;
+      }
+
+      // Stale detection: if marked online but no heartbeat for 2+ minutes → offline
+      if (isOnline && lastSeen) {
+        const age = Date.now() - lastSeen;
+        if (age > STALE_THRESHOLD) {
+          isOnline = false;
+        }
+      }
+
+      callback({ isOnline, lastSeen });
     },
     (error) => {
       console.error("[Presence] Watch error for", uid, ":", error);
       callback({ isOnline: false, lastSeen: null });
     }
   );
+
   return unsubscribe;
 }
 
 /**
- * Watch multiple users' presence statuses (realtime).
+ * Watch multiple users' presence statuses in real-time.
+ *
  * @param {string[]} uids
- * @param {Function} callback — receives Map<uid, { isOnline, lastSeen }>
+ * @param {Function} callback - receives Map<uid, { isOnline, lastSeen }>
  * @returns {Function} unsubscribe
  */
 export function watchMultiplePresence(uids, callback) {
@@ -150,6 +228,7 @@ export function watchMultiplePresence(uids, callback) {
   uids.forEach((uid) => {
     const unsub = watchPresence(uid, (status) => {
       presenceMap.set(uid, status);
+      // Send a new Map copy so React detects the change
       callback(new Map(presenceMap));
     });
     unsubscribes.push(unsub);
@@ -161,22 +240,21 @@ export function watchMultiplePresence(uids, callback) {
 }
 
 /**
- * Get the last seen timestamp for a user (one-time read).
+ * Get the last seen timestamp for a user (one-time read via snapshot).
+ * For real-time updates, use watchPresence instead.
  */
 export async function getLastSeen(uid) {
-  try {
-    const userStatusRef = ref(rtdb, `status/${uid}`);
-    const snapshot = await get(userStatusRef);
-    const data = snapshot.val();
-    return data ? data.lastSeen : null;
-  } catch (error) {
-    console.error("[Presence] getLastSeen error:", error);
-    return null;
-  }
+  return new Promise((resolve) => {
+    const unsub = watchPresence(uid, (status) => {
+      unsub();
+      resolve(status.lastSeen);
+    });
+  });
 }
 
 /**
  * Format a lastSeen timestamp into a human-readable string.
+ *
  * @param {number|null} timestamp — Unix timestamp in ms
  * @returns {string}
  */

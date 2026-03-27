@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../lib/socket';
 import { startDialingTone, stopDialingTone, playEndCallBeep } from '../lib/sounds';
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+import { db } from '../lib/firebase';
+import { doc, updateDoc, collection, addDoc, onSnapshot } from 'firebase/firestore';
 
 const COLORS = {
   bgDeep: '#070B10',
@@ -60,8 +60,8 @@ const KEYFRAMES_CSS = `
 `;
 
 export default function VideoCall({ userName, peerInfo }) {
-  // peerInfo = { socketId, uid, name }
-  const { socket, callState, endCall: contextEndCall, setCallState, setCallPeer } = useSocket();
+  // peerInfo = { uid, name }
+  const { callState, endCall: contextEndCall, setCallState, setCallPeer, activeCallId } = useSocket();
 
   // ── State ──
   const [localStream, setLocalStream] = useState(null);
@@ -80,17 +80,16 @@ export default function VideoCall({ userName, peerInfo }) {
   const [networkStats, setNetworkStats] = useState({ packetLoss: 0, jitter: 0, rtt: 0, bitrate: 0 });
   const [isCallConnected, setIsCallConnected] = useState(false);
   const [mediaSetupPhase, setMediaSetupPhase] = useState('camera');
-  const [mediaReady, setMediaReady] = useState(false); // NEW: track when getUserMedia is done
+  const [mediaReady, setMediaReady] = useState(false);
 
   // ── Refs ──
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const peerConnectionRef = useRef(null);
-  const currentTargetRef = useRef(peerInfo?.socketId || null);
+  const activeCallIdRef = useRef(activeCallId || null);
   const timerRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
-  const pendingOfferRef = useRef(null); // NEW: queue offer if media not ready
   const statsIntervalRef = useRef(null);
   const prevStatsRef = useRef(null);
   const iceRestartAttemptRef = useRef(0);
@@ -102,14 +101,11 @@ export default function VideoCall({ userName, peerInfo }) {
   const styleRef = useRef(null);
   const iceServersRef = useRef(null);
   const answerReceivedRef = useRef(false);
-  const offerRetryTimerRef = useRef(null);
 
-  // Keep target ref in sync
+  // Keep activeCallIdRef in sync
   useEffect(() => {
-    if (peerInfo?.socketId) {
-      currentTargetRef.current = peerInfo.socketId;
-    }
-  }, [peerInfo?.socketId]);
+    activeCallIdRef.current = activeCallId;
+  }, [activeCallId]);
 
   // ── Inject keyframes ──
   useEffect(() => {
@@ -146,35 +142,18 @@ export default function VideoCall({ userName, peerInfo }) {
     return `${m}:${s}`;
   };
 
-  // ── Fetch TURN/ICE servers ──
+  // ── ICE servers config (STUN only, no server needed) ──
   useEffect(() => {
-    let cancelled = false;
-    async function fetchICE() {
-      try {
-        const res = await fetch(`${SOCKET_URL}/api/turn-credentials`);
-        const data = await res.json();
-        if (!cancelled && data.iceServers) {
-          setIceServersConfig({ iceServers: data.iceServers });
-          iceServersRef.current = { iceServers: data.iceServers };
-        }
-      } catch (err) {
-        console.warn('[VideoCall] Failed to fetch TURN config, using STUN fallback:', err);
-        const fallback = {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-          ],
-        };
-        if (!cancelled) {
-          setIceServersConfig(fallback);
-          iceServersRef.current = fallback;
-        }
-      }
-    }
-    fetchICE();
-    return () => { cancelled = true; };
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+      ],
+    };
+    setIceServersConfig(config);
+    iceServersRef.current = config;
   }, []);
 
   // ── Set bitrate on video sender ──
@@ -235,14 +214,8 @@ export default function VideoCall({ userName, peerInfo }) {
       clearTimeout(failedTimerRef.current);
       failedTimerRef.current = null;
     }
-    if (offerRetryTimerRef.current) {
-      clearTimeout(offerRetryTimerRef.current);
-      offerRetryTimerRef.current = null;
-    }
 
     pendingCandidatesRef.current = [];
-    pendingOfferRef.current = null;
-    currentTargetRef.current = null;
 
     contextEndCall(callTimerRef.current);
   }, [contextEndCall]);
@@ -259,13 +232,15 @@ export default function VideoCall({ userName, peerInfo }) {
       pc.restartIce();
       const offer = await pc.createOffer({ iceRestart: true });
       await pc.setLocalDescription(offer);
-      if (currentTargetRef.current) {
-        socket?.emit('offer', { targetSocketId: currentTargetRef.current, offer });
+      if (activeCallIdRef.current) {
+        await updateDoc(doc(db, 'calls', activeCallIdRef.current), {
+          offer: JSON.parse(JSON.stringify(offer))
+        });
       }
     } catch (err) {
       console.error('[VideoCall] ICE restart failed:', err);
     }
-  }, [socket]);
+  }, []);
 
   // ── Create peer connection ──
   const createPeerConnection = useCallback(() => {
@@ -286,11 +261,12 @@ export default function VideoCall({ userName, peerInfo }) {
     const pc = new RTCPeerConnection({ ...config, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' });
 
     pc.onicecandidate = (event) => {
-      if (event.candidate && currentTargetRef.current) {
-        socket?.emit('ice-candidate', {
-          targetSocketId: currentTargetRef.current,
-          candidate: event.candidate,
-        });
+      if (event.candidate && activeCallIdRef.current) {
+        const candidateCollection = isCallerRef.current ? 'callerCandidates' : 'calleeCandidates';
+        addDoc(
+          collection(db, 'calls', activeCallIdRef.current, candidateCollection),
+          { candidate: JSON.parse(JSON.stringify(event.candidate)) }
+        ).catch(err => console.warn('[VideoCall] Failed to write ICE candidate:', err));
       }
     };
 
@@ -383,7 +359,7 @@ export default function VideoCall({ userName, peerInfo }) {
 
     peerConnectionRef.current = pc;
     return pc;
-  }, [socket, attemptIceRestart, handleEndCall]);
+  }, [attemptIceRestart, handleEndCall]);
 
   // ── Network quality monitor ──
   useEffect(() => {
@@ -479,7 +455,7 @@ export default function VideoCall({ userName, peerInfo }) {
         setLocalStream(stream);
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-        setMediaReady(true); // Signal that media is ready
+        setMediaReady(true);
         console.log('[VideoCall] Got HD media:', stream.getTracks().map(t => t.kind).join(', '));
         return;
       } catch (err) {
@@ -530,191 +506,126 @@ export default function VideoCall({ userName, peerInfo }) {
     };
   }, []);
 
-  // ── CRITICAL FIX: Process queued offer once media is ready ──
+  // ── Firestore signaling listeners (replaces socket event listeners) ──
   useEffect(() => {
-    if (!mediaReady || !pendingOfferRef.current || !socket) return;
+    if (!activeCallId || callState === 'idle' || callState === 'calling') return;
+    if (!mediaReady) return;
 
-    const { senderSocketId, offer } = pendingOfferRef.current;
-    pendingOfferRef.current = null;
+    const callRef = doc(db, 'calls', activeCallId);
+    const unsubscribers = [];
+    let offerProcessed = false;
+    let answerProcessed = false;
 
-    console.log('[VideoCall] Processing queued offer now that media is ready');
+    // === CALLEE: Listen for offer ===
+    if (!isCallerRef.current) {
+      const unsubOffer = onSnapshot(callRef, async (snapshot) => {
+        const data = snapshot.data();
+        if (!data?.offer || offerProcessed) return;
+        offerProcessed = true;
 
-    async function processOffer() {
-      currentTargetRef.current = senderSocketId;
-      setMediaSetupPhase('connecting');
-      setCallPeer((prev) => prev ? { ...prev, socketId: senderSocketId } : prev);
+        console.log('[VideoCall] Received offer from Firestore');
 
-      try {
-        const pc = createPeerConnection();
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        try {
+          let pc = peerConnectionRef.current;
+          if (!pc || pc.signalingState === 'closed') {
+            pc = createPeerConnection();
+          }
 
-        for (const candidate of pendingCandidatesRef.current) {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-        pendingCandidatesRef.current = [];
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('answer', { targetSocketId: senderSocketId, answer });
-        console.log('[VideoCall] Sent answer after media ready');
-      } catch (err) {
-        console.error('[VideoCall] Error processing queued offer:', err);
-      }
-    }
-
-    processOffer();
-  }, [mediaReady, socket, createPeerConnection, setCallPeer]);
-
-  // ── Socket event listeners for WebRTC signaling ──
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleOffer = async ({ senderSocketId, offer }) => {
-      console.log('[VideoCall] Received offer from', senderSocketId);
-
-      // ── CRITICAL FIX: If media not ready yet, queue the offer ──
-      if (!localStreamRef.current) {
-        console.log('[VideoCall] Media not ready yet — queuing offer');
-        pendingOfferRef.current = { senderSocketId, offer };
-        return;
-      }
-
-      currentTargetRef.current = senderSocketId;
-      setMediaSetupPhase('connecting');
-      setCallPeer((prev) => prev ? { ...prev, socketId: senderSocketId } : prev);
-
-      try {
-        // Reuse existing PC for renegotiation (e.g., ICE restart), create new only if needed
-        let pc = peerConnectionRef.current;
-        if (!pc || pc.signalingState === 'closed') {
-          pc = createPeerConnection();
-        }
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
-
-        for (const candidate of pendingCandidatesRef.current) {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-        pendingCandidatesRef.current = [];
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('answer', { targetSocketId: senderSocketId, answer });
-      } catch (err) {
-        console.error('[VideoCall] Error handling offer:', err);
-      }
-    };
-
-    const handleAnswer = async ({ senderSocketId, answer }) => {
-      console.log('[VideoCall] Received answer from', senderSocketId);
-      answerReceivedRef.current = true;
-      if (offerRetryTimerRef.current) {
-        clearTimeout(offerRetryTimerRef.current);
-        offerRetryTimerRef.current = null;
-      }
-      try {
-        if (peerConnectionRef.current) {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-
+          // Process any pending ICE candidates
           for (const candidate of pendingCandidatesRef.current) {
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
           }
           pendingCandidatesRef.current = [];
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          // Write answer to Firestore
+          await updateDoc(callRef, { answer: JSON.parse(JSON.stringify(answer)) });
+          console.log('[VideoCall] Sent answer via Firestore');
+        } catch (err) {
+          console.error('[VideoCall] Error handling offer:', err);
         }
-      } catch (err) {
-        console.error('[VideoCall] Error handling answer:', err);
-      }
-    };
+      });
+      unsubscribers.push(unsubOffer);
+    }
 
-    const handleIceCandidate = async ({ candidate }) => {
-      try {
-        if (peerConnectionRef.current && peerConnectionRef.current.remoteDescription) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } else {
-          pendingCandidatesRef.current.push(candidate);
+    // === CALLER: Listen for answer ===
+    if (isCallerRef.current) {
+      const unsubAnswer = onSnapshot(callRef, async (snapshot) => {
+        const data = snapshot.data();
+        if (!data?.answer || answerProcessed) return;
+        answerProcessed = true;
+        answerReceivedRef.current = true;
+
+        console.log('[VideoCall] Received answer from Firestore');
+
+        try {
+          if (peerConnectionRef.current) {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+
+            for (const candidate of pendingCandidatesRef.current) {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+            pendingCandidatesRef.current = [];
+          }
+        } catch (err) {
+          console.error('[VideoCall] Error handling answer:', err);
         }
-      } catch (err) {
-        console.error('[VideoCall] ICE candidate error:', err);
-      }
-    };
+      });
+      unsubscribers.push(unsubAnswer);
+    }
 
-    const handleCallEnded = ({ senderName, duration }) => {
-      console.log('[VideoCall] Call ended by', senderName);
-      stopDialingTone();
-      playEndCallBeep();
+    // === Listen for remote ICE candidates ===
+    const remoteCandidateCollection = isCallerRef.current ? 'calleeCandidates' : 'callerCandidates';
+    const unsubCandidates = onSnapshot(
+      collection(db, 'calls', activeCallId, remoteCandidateCollection),
+      (snapshot) => {
+        snapshot.docChanges().forEach(async (change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            if (!data.candidate) return;
 
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
+            try {
+              if (peerConnectionRef.current && peerConnectionRef.current.remoteDescription) {
+                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+              } else {
+                pendingCandidatesRef.current.push(data.candidate);
+              }
+            } catch (err) {
+              console.error('[VideoCall] ICE candidate error:', err);
+            }
+          }
+        });
       }
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop());
-        localStreamRef.current = null;
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      if (statsIntervalRef.current) {
-        clearInterval(statsIntervalRef.current);
-        statsIntervalRef.current = null;
-      }
-      pendingCandidatesRef.current = [];
-      pendingOfferRef.current = null;
-    };
-
-    const handleReceiveMessage = (msg) => {
-      setMessages((prev) => [...prev, { ...msg, isMine: false }]);
-    };
-
-    const handleMediaToggled = ({ mediaType, enabled }) => {
-      setRemoteMediaState((prev) => ({ ...prev, [mediaType]: enabled }));
-    };
-
-    const handleUserLeft = ({ socketId }) => {
-      if (currentTargetRef.current === socketId) {
-        handleEndCall();
-      }
-    };
-
-    socket.on('offer', handleOffer);
-    socket.on('answer', handleAnswer);
-    socket.on('ice-candidate', handleIceCandidate);
-    socket.on('call-ended', handleCallEnded);
-    socket.on('receive-message', handleReceiveMessage);
-    socket.on('media-toggled', handleMediaToggled);
-    socket.on('user-left', handleUserLeft);
+    );
+    unsubscribers.push(unsubCandidates);
 
     return () => {
-      socket.off('offer', handleOffer);
-      socket.off('answer', handleAnswer);
-      socket.off('ice-candidate', handleIceCandidate);
-      socket.off('call-ended', handleCallEnded);
-      socket.off('receive-message', handleReceiveMessage);
-      socket.off('media-toggled', handleMediaToggled);
-      socket.off('user-left', handleUserLeft);
+      unsubscribers.forEach(unsub => unsub());
     };
-  }, [socket, createPeerConnection, handleEndCall, setCallPeer, setCallState]);
+  }, [activeCallId, callState, mediaReady, createPeerConnection]);
 
   // ── Initiate WebRTC if we are the caller — wait for receiver to ACCEPT first ──
   useEffect(() => {
-    if (!socket || !isCallerRef.current) return;
+    if (!isCallerRef.current) return;
     if (!iceServersConfig) return;
     if (!localStreamRef.current) return;
     if (callState !== 'connected') return;
-    if (!currentTargetRef.current) return;
+    if (!activeCallIdRef.current) return;
 
     // Don't re-initiate if PeerConnection already exists and is negotiating or connected
     if (peerConnectionRef.current &&
         !['closed', 'failed'].includes(peerConnectionRef.current.iceConnectionState || '')) return;
 
-    let retryCount = 0;
     answerReceivedRef.current = false;
 
     async function sendOffer() {
-      const target = currentTargetRef.current;
-      if (!target || answerReceivedRef.current || !isMountedRef.current) return;
+      if (!activeCallIdRef.current || answerReceivedRef.current || !isMountedRef.current) return;
 
-      console.log(`[VideoCall] Caller: sending offer to ${target} (attempt ${retryCount + 1})`);
+      console.log('[VideoCall] Caller: sending offer via Firestore');
       setMediaSetupPhase('connecting');
 
       try {
@@ -725,38 +636,22 @@ export default function VideoCall({ userName, peerInfo }) {
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('offer', { targetSocketId: target, offer });
 
-        // Retry after 8 seconds if no answer received (allows time for slow mobile media setup)
-        if (retryCount < 3) {
-          offerRetryTimerRef.current = setTimeout(() => {
-            if (!answerReceivedRef.current && isMountedRef.current) {
-              retryCount++;
-              console.log('[VideoCall] No answer received, retrying offer...');
-              sendOffer();
-            }
-          }, 8000);
-        }
+        await updateDoc(doc(db, 'calls', activeCallIdRef.current), {
+          offer: JSON.parse(JSON.stringify(offer))
+        });
+        console.log('[VideoCall] Offer written to Firestore');
       } catch (err) {
         console.error('[VideoCall] Error creating offer:', err);
-        if (retryCount < 3) {
-          retryCount++;
-          offerRetryTimerRef.current = setTimeout(sendOffer, 2000);
-        } else {
-          handleEndCall();
-        }
+        handleEndCall();
       }
     }
 
     const timer = setTimeout(sendOffer, 500);
     return () => {
       clearTimeout(timer);
-      if (offerRetryTimerRef.current) {
-        clearTimeout(offerRetryTimerRef.current);
-        offerRetryTimerRef.current = null;
-      }
     };
-  }, [socket, iceServersConfig, createPeerConnection, handleEndCall, localStream, callState, peerInfo?.socketId]);
+  }, [iceServersConfig, createPeerConnection, handleEndCall, localStream, callState]);
 
   // ── Call timer ──
   useEffect(() => {
@@ -821,7 +716,6 @@ export default function VideoCall({ userName, peerInfo }) {
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
       if (failedTimerRef.current) clearTimeout(failedTimerRef.current);
-      if (offerRetryTimerRef.current) clearTimeout(offerRetryTimerRef.current);
     };
   }, []);
 
@@ -832,11 +726,6 @@ export default function VideoCall({ userName, peerInfo }) {
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setIsMuted(!audioTrack.enabled);
-        socket?.emit('toggle-media', {
-          targetSocketId: currentTargetRef.current,
-          mediaType: 'audio',
-          enabled: audioTrack.enabled,
-        });
       }
     }
   };
@@ -847,11 +736,6 @@ export default function VideoCall({ userName, peerInfo }) {
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
         setIsCameraOff(!videoTrack.enabled);
-        socket?.emit('toggle-media', {
-          targetSocketId: currentTargetRef.current,
-          mediaType: 'video',
-          enabled: videoTrack.enabled,
-        });
       }
     }
   };
@@ -860,18 +744,13 @@ export default function VideoCall({ userName, peerInfo }) {
     const text = messageInput.trim();
     if (!text) return;
     const msg = {
-      senderSocketId: socket?.id,
       senderName: userName,
       message: text,
       timestamp: Date.now(),
       isMine: true,
     };
     setMessages((prev) => [...prev, msg]);
-    socket?.emit('send-message', {
-      targetSocketId: currentTargetRef.current,
-      message: text,
-      senderName: userName,
-    });
+    // Chat over Firestore subcollection could be added here in the future
     setMessageInput('');
   };
 

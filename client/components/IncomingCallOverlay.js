@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { useSocket } from '../lib/socket';
 import { startRingtone, stopRingtone, warmUpAudio } from '../lib/sounds';
+import { db } from '../lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 const COLORS = {
   bgDeep: '#070B10',
@@ -37,7 +39,7 @@ const keyframesStyle = `
 `;
 
 export default function IncomingCallOverlay() {
-  const { callState, incomingCallInfo, acceptCall, rejectCall } = useSocket();
+  const { callState, incomingCallInfo, endCall, setCallState, activeCallId } = useSocket();
   const autoRejectRef = useRef(null);
   const styleRef = useRef(null);
 
@@ -56,8 +58,12 @@ export default function IncomingCallOverlay() {
   // Auto-reject after 30 seconds
   useEffect(() => {
     if (callState === 'incoming' && incomingCallInfo) {
-      autoRejectRef.current = setTimeout(() => {
-        rejectCall();
+      autoRejectRef.current = setTimeout(async () => {
+        stopRingtone();
+        if (activeCallId) {
+          await updateDoc(doc(db, 'calls', activeCallId), { status: 'rejected' });
+        }
+        endCall();
       }, 30000);
     }
     return () => {
@@ -66,7 +72,7 @@ export default function IncomingCallOverlay() {
         autoRejectRef.current = null;
       }
     };
-  }, [callState, incomingCallInfo, rejectCall]);
+  }, [callState, incomingCallInfo, endCall, activeCallId]);
 
   // Inject keyframes
   useEffect(() => {
@@ -84,17 +90,23 @@ export default function IncomingCallOverlay() {
     };
   }, []);
 
-  // Handle accept — unlock audio + stop ringtone first
-  const handleAccept = () => {
+  // Handle accept — unlock audio + stop ringtone first, then update Firestore
+  const handleAccept = async () => {
     warmUpAudio(); // Unlock AudioContext on user gesture for Mobile Safari
     stopRingtone();
-    acceptCall();
+    if (activeCallId) {
+      await updateDoc(doc(db, 'calls', activeCallId), { status: 'connected' });
+    }
+    setCallState('connected');
   };
 
-  // Handle reject — stop ringtone first
-  const handleReject = () => {
+  // Handle reject — stop ringtone first, then update Firestore
+  const handleReject = async () => {
     stopRingtone();
-    rejectCall();
+    if (activeCallId) {
+      await updateDoc(doc(db, 'calls', activeCallId), { status: 'rejected' });
+    }
+    endCall();
   };
 
   if (callState !== 'incoming' || !incomingCallInfo) return null;
