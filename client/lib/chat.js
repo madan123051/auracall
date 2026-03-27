@@ -126,6 +126,12 @@ export function getMessages(chatId, messageLimit = 50, callback) {
 
 /**
  * Mark all messages as read for a user in a chat.
+ *
+ * BUG FIX: The original compound query (read == false && senderId != uid)
+ * requires a Firestore composite index. Without it, the query silently fails
+ * and messages are NEVER marked as read — causing permanent single-tick (✓).
+ *
+ * Fix: Use single-field query (read == false) + client-side filtering.
  */
 export async function markAsRead(chatId, uid) {
   if (!chatId || !uid) return;
@@ -138,17 +144,25 @@ export async function markAsRead(chatId, uid) {
     });
 
     // Mark individual messages as read
+    // FIX: Use single-field query to avoid composite index requirement
     const messagesRef = collection(db, "chats", chatId, "messages");
-    const q = query(messagesRef, where("read", "==", false), where("senderId", "!=", uid));
+    const q = query(messagesRef, where("read", "==", false));
     const snapshot = await getDocs(q);
 
     if (!snapshot.empty) {
       const batch = writeBatch(db);
+      let count = 0;
       snapshot.docs.forEach((msgDoc) => {
-        batch.update(msgDoc.ref, { read: true });
+        // Client-side filter: only mark messages from OTHER users as read
+        if (msgDoc.data().senderId !== uid) {
+          batch.update(msgDoc.ref, { read: true });
+          count++;
+        }
       });
-      await batch.commit();
-      console.log("[Chat] Marked", snapshot.size, "messages as read in", chatId);
+      if (count > 0) {
+        await batch.commit();
+        console.log("[Chat] Marked", count, "messages as read in", chatId);
+      }
     }
   } catch (error) {
     console.error("[Chat] markAsRead error:", error);

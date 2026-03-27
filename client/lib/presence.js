@@ -41,8 +41,18 @@ export function setupPresence(uid) {
     onDisconnect(userStatusRef)
       .set(isOfflineData)
       .then(() => {
-        // Set online
-        set(userStatusRef, isOnlineData);
+        // BUG FIX: Added error handling to set() call.
+        // Without .catch(), if RTDB rules deny this write, it fails SILENTLY
+        // and the user NEVER appears online to others.
+        set(userStatusRef, isOnlineData)
+          .then(() => {
+            console.log("[Presence] ✅ Online status set for:", uid);
+          })
+          .catch((error) => {
+            console.error("[Presence] ❌ Failed to set online status:", error.message);
+            console.error("[Presence] Check Firebase RTDB rules allow write to /status/" + uid);
+            console.error("[Presence] Run: firebase deploy --only database");
+          });
 
         // Sync to Firestore
         syncPresenceToFirestore(uid, true);
