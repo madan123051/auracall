@@ -53,6 +53,7 @@ export function SocketProvider({ user, children }) {
   useEffect(() => { activeCallIdRef.current = activeCallId; }, [activeCallId]);
 
   // ── Clean up stale calls on mount ──
+  // FIX: Use single-field query + client-side filtering to avoid composite index issues.
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -61,12 +62,13 @@ export function SocketProvider({ user, children }) {
       try {
         const q = query(
           collection(db, 'calls'),
-          where('callerUid', '==', user.uid),
-          where('status', 'in', ['calling', 'connected'])
+          where('callerUid', '==', user.uid)
         );
         const snap = await getDocs(q);
         snap.forEach(async (docSnap) => {
           const data = docSnap.data();
+          // Client-side filter: only clean up active calls
+          if (data.status !== 'calling' && data.status !== 'connected') return;
           const createdAt = data.createdAt?.toMillis?.() || 0;
           // If older than 2 minutes, it's stale
           if (Date.now() - createdAt > 2 * 60 * 1000) {
@@ -74,26 +76,42 @@ export function SocketProvider({ user, children }) {
           }
         });
       } catch (e) {
-        // Ignore cleanup errors
+        console.error('[CallContext] cleanStaleCalls error:', e);
       }
     }
     cleanStaleCalls();
   }, [user?.uid]);
 
   // ── Listen for incoming calls (where I am the callee) ──
+  // FIX: Use single-field query + client-side filtering to avoid composite index issues.
+  // The original compound query (calleeUid + status) silently fails without a composite index.
+  // Same pattern used in chat.js markAsRead and friends.js throughout.
   useEffect(() => {
     if (!user?.uid) return;
 
     const q = query(
       collection(db, 'calls'),
-      where('calleeUid', '==', user.uid),
-      where('status', '==', 'calling')
+      where('calleeUid', '==', user.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
+        if (change.type === 'added' || change.type === 'modified') {
           const data = change.doc.data();
+
+          // Client-side filter: only process calls with 'calling' status
+          if (data.status !== 'calling') {
+            // If a call we were ringing for got cancelled/ended, dismiss it
+            if (change.type === 'modified' && activeCallIdRef.current === change.doc.id) {
+              if (data.status === 'ended' && callStateRef.current === 'incoming') {
+                console.log('[CallContext] Incoming call cancelled by caller');
+                setCallState('idle');
+                setIncomingCallInfo(null);
+                setActiveCallId(null);
+              }
+            }
+            return;
+          }
 
           // Skip if call is too old (> 60 seconds — missed call)
           const createdAt = data.createdAt?.toMillis?.() || 0;
@@ -105,6 +123,11 @@ export function SocketProvider({ user, children }) {
           if (callStateRef.current === 'connected' || callStateRef.current === 'calling') {
             console.log('[CallContext] Already in call, auto-rejecting incoming');
             updateDoc(change.doc.ref, { status: 'busy' }).catch(() => {});
+            return;
+          }
+
+          // Don't re-trigger if we're already showing this call
+          if (callStateRef.current === 'incoming' && activeCallIdRef.current === change.doc.id) {
             return;
           }
 
@@ -120,6 +143,8 @@ export function SocketProvider({ user, children }) {
           setCallState('incoming');
         }
       });
+    }, (error) => {
+      console.error('[CallContext] Incoming call listener error:', error);
     });
 
     return () => unsubscribe();
@@ -201,6 +226,8 @@ export function SocketProvider({ user, children }) {
         }));
         setCallState('connected');
       }
+    }, (error) => {
+      console.error('[CallContext] Call doc listener error:', error);
     });
 
     callDocUnsubRef.current = unsub;
