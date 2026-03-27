@@ -166,19 +166,37 @@ app.get('/', (_req, res) => {
 });
 
 // ── TURN credentials endpoint ──
-app.get('/api/turn-credentials', (req, res) => {
+app.get('/api/turn-credentials', async (req, res) => {
   const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    // ── Free Open Relay TURN servers (relay fallback for mobile carrier NAT) ──
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ];
-  // Add TURN if configured via TURN_URL env var
+
+  // ── Metered TURN: fetch temporary credentials via REST API ──
+  // Sign up free at https://www.metered.ca/stun-turn to get your API key
+  if (process.env.METERED_API_KEY) {
+    const domain = process.env.METERED_DOMAIN || 'global.relay.metered.ca';
+    try {
+      const resp = await fetch(
+        `https://${domain}/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`
+      );
+      if (resp.ok) {
+        const turnServers = await resp.json();
+        if (Array.isArray(turnServers)) {
+          iceServers.push(...turnServers);
+          console.log(`🧊  Fetched ${turnServers.length} Metered TURN servers`);
+        }
+      } else {
+        console.warn(`⚠️   Metered TURN API returned status ${resp.status}`);
+      }
+    } catch (err) {
+      console.warn('⚠️   Failed to fetch Metered TURN credentials:', err.message);
+    }
+  }
+
+  // ── Custom TURN server via env vars ──
   if (process.env.TURN_URL) {
     iceServers.push({
       urls: process.env.TURN_URL,
@@ -186,7 +204,8 @@ app.get('/api/turn-credentials', (req, res) => {
       credential: process.env.TURN_CREDENTIAL || '',
     });
   }
-  // Add custom TURN servers from JSON env var
+
+  // ── Custom TURN servers from JSON env var ──
   if (process.env.TURN_SERVERS_JSON) {
     try {
       const customServers = JSON.parse(process.env.TURN_SERVERS_JSON);
@@ -197,17 +216,17 @@ app.get('/api/turn-credentials', (req, res) => {
       console.warn('⚠️   Failed to parse TURN_SERVERS_JSON:', err.message);
     }
   }
-  // Add Metered TURN relay servers if API key is configured
-  if (process.env.METERED_API_KEY) {
-    const meteredKey = process.env.METERED_API_KEY;
-    iceServers.push(
-      { urls: 'turn:global.relay.metered.ca:80', username: meteredKey, credential: meteredKey },
-      { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: meteredKey, credential: meteredKey },
-      { urls: 'turn:global.relay.metered.ca:443', username: meteredKey, credential: meteredKey },
-      { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: meteredKey, credential: meteredKey },
-    );
+
+  // ── Check if any TURN relay is available ──
+  const hasTurn = iceServers.some(s => {
+    const u = typeof s.urls === 'string' ? s.urls : (Array.isArray(s.urls) ? s.urls[0] : '');
+    return u.startsWith('turn:') || u.startsWith('turns:');
+  });
+  if (!hasTurn) {
+    console.warn('⚠️   No TURN relay servers available — calls may fail on mobile/restricted networks');
   }
-  console.log(`🧊  Returning ${iceServers.length} ICE servers`);
+
+  console.log(`🧊  Returning ${iceServers.length} ICE servers (TURN: ${hasTurn ? '✅' : '❌'})`);
   res.json({ iceServers });
 });
 
@@ -632,7 +651,14 @@ setInterval(() => {
 // ── Start server ──
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
+  const hasTurnConfig = !!(process.env.METERED_API_KEY || process.env.TURN_URL || process.env.TURN_SERVERS_JSON);
   console.log(`\n🚀  AuraCall Signaling Server running on http://localhost:${PORT}`);
   console.log(`    Auth: ${firebaseAdmin ? 'Firebase Admin ✅' : 'Disabled ⚠️'}`);
+  console.log(`    TURN: ${hasTurnConfig ? 'Configured ✅' : '❌ Not configured'}`);
+  if (!hasTurnConfig) {
+    console.log('    ℹ️   Calls will fail on mobile/restricted networks without TURN servers');
+    console.log('    ℹ️   Get free TURN servers at https://www.metered.ca/stun-turn');
+    console.log('    ℹ️   Then set METERED_API_KEY and METERED_DOMAIN in your .env');
+  }
   console.log('');
 });
