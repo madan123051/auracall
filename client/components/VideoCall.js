@@ -438,6 +438,17 @@ export default function VideoCall({ userName, peerInfo }) {
     };
   }, [isCallConnected, setBitrate, currentBitrateLabel]);
 
+  // ── FIX: Re-attach local stream when "Active call" screen renders ──
+  // The localVideoRef element only exists in the active call screen.
+  // During "calling" / "connecting", an early return renders a different UI
+  // without the video element — so srcObject set in getMedia() hits null ref.
+  // This effect re-attaches the stream once the video element appears in the DOM.
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  }, [isCallConnected, remoteStream, localStream]);
+
   // ── Get user media ──
   useEffect(() => {
     let cancelled = false;
