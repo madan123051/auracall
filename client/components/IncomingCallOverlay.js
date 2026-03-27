@@ -39,7 +39,7 @@ const keyframesStyle = `
 `;
 
 export default function IncomingCallOverlay() {
-  const { callState, incomingCallInfo, endCall, setCallState, activeCallId } = useSocket();
+  const { callState, incomingCallInfo, endCall, acceptCall, activeCallId } = useSocket();
   const autoRejectRef = useRef(null);
   const styleRef = useRef(null);
 
@@ -90,14 +90,12 @@ export default function IncomingCallOverlay() {
     };
   }, []);
 
-  // Handle accept — unlock audio + stop ringtone first, then update Firestore
+  // Handle accept — unlock audio + stop ringtone, then use acceptCall() from context
+  // which properly sets callPeer, callRoom, clears incomingCallInfo, and updates Firestore
   const handleAccept = async () => {
     warmUpAudio(); // Unlock AudioContext on user gesture for Mobile Safari
     stopRingtone();
-    if (activeCallId) {
-      await updateDoc(doc(db, 'calls', activeCallId), { status: 'connected' });
-    }
-    setCallState('connected');
+    acceptCall();
   };
 
   // Handle reject — stop ringtone first, then update Firestore

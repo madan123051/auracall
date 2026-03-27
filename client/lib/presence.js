@@ -9,7 +9,7 @@
  * 1. Writes { isOnline: true, lastSeen: serverTimestamp() } every 60s
  * 2. On tab hide/close → marks offline
  * 3. Other users read presence via onSnapshot on the users/{uid} doc
- * 4. Stale detection: if lastSeen > 2 minutes ago, consider offline
+ * 4. Stale detection: if lastSeen > 15 minutes ago, consider offline
  * =============================================================================
  */
 
@@ -18,7 +18,7 @@ import { db } from "./firebase";
 
 // ── Constants ──
 const HEARTBEAT_INTERVAL = 60000; // 1 minute
-const STALE_THRESHOLD = 2 * 60 * 1000; // 2 minutes — if no heartbeat, user is offline
+const STALE_THRESHOLD = 15 * 60 * 1000; // 15 minutes — if no heartbeat, user is offline (matches Lumina)
 
 // ── Module state ──
 let heartbeatInterval = null;
@@ -88,12 +88,15 @@ export function setupPresence(uid) {
   visibilityHandler = () => {
     if (!trackedUserId) return;
     if (document.visibilityState === "hidden") {
-      writePresence(trackedUserId, false);
+      // Don't mark offline immediately — mobile visibility changes are frequent
+      // (app switching, notifications, etc.) and cause false offline flickers.
+      // Just pause heartbeat and let the stale threshold (15 min) handle it.
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
       }
     } else if (document.visibilityState === "visible") {
+      // Tab is visible again — immediately send heartbeat and restart interval
       writePresence(trackedUserId, true);
       if (!heartbeatInterval) {
         heartbeatInterval = setInterval(() => {
@@ -154,7 +157,7 @@ function cleanupPresence(uid) {
  * Watch a single user's presence status in real-time.
  * Uses Firestore onSnapshot — instant updates when the user doc changes.
  *
- * Includes stale detection: if isOnline but lastSeen > 2 min ago → offline.
+ * Includes stale detection: if isOnline but lastSeen > 15 min ago → offline.
  *
  * @param {string} uid
  * @param {Function} callback - receives { isOnline: boolean, lastSeen: number|null }
@@ -190,7 +193,7 @@ export function watchPresence(uid, callback) {
             : null;
       }
 
-      // Stale detection: if marked online but no heartbeat for 2+ minutes → offline
+      // Stale detection: if marked online but no heartbeat for 15+ minutes → offline
       if (isOnline && lastSeen) {
         const age = Date.now() - lastSeen;
         if (age > STALE_THRESHOLD) {

@@ -258,7 +258,7 @@ export default function VideoCall({ userName, peerInfo }) {
     };
 
     // Use max-bundle to reduce ICE candidates (1 transport instead of per-media)
-    const pc = new RTCPeerConnection({ ...config, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' });
+    const pc = new RTCPeerConnection({ ...config, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require', iceCandidatePoolSize: 10 });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && activeCallIdRef.current) {
@@ -508,7 +508,7 @@ export default function VideoCall({ userName, peerInfo }) {
 
   // ── Firestore signaling listeners (replaces socket event listeners) ──
   useEffect(() => {
-    if (!activeCallId || callState === 'idle' || callState === 'calling') return;
+    if (!activeCallId || callState === 'idle' || callState === 'incoming') return;
     if (!mediaReady) return;
 
     const callRef = doc(db, 'calls', activeCallId);
@@ -608,12 +608,12 @@ export default function VideoCall({ userName, peerInfo }) {
     };
   }, [activeCallId, callState, mediaReady, createPeerConnection]);
 
-  // ── Initiate WebRTC if we are the caller — wait for receiver to ACCEPT first ──
+  // ── Initiate WebRTC if we are the caller — send offer IMMEDIATELY ──
   useEffect(() => {
     if (!isCallerRef.current) return;
     if (!iceServersConfig) return;
     if (!localStreamRef.current) return;
-    if (callState !== 'connected') return;
+    if (callState !== 'calling') return;
     if (!activeCallIdRef.current) return;
 
     // Don't re-initiate if PeerConnection already exists and is negotiating or connected
@@ -634,7 +634,10 @@ export default function VideoCall({ userName, peerInfo }) {
           pc = createPeerConnection();
         }
 
-        const offer = await pc.createOffer();
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+        });
         await pc.setLocalDescription(offer);
 
         await updateDoc(doc(db, 'calls', activeCallIdRef.current), {
