@@ -27,6 +27,7 @@ import {
   query, where, orderBy, limit, serverTimestamp, addDoc, getDoc, getDocs
 } from 'firebase/firestore';
 import { setupPresence } from './presence';
+import { saveCallRecord } from './callHistory';
 
 const SocketContext = createContext(null);
 
@@ -47,6 +48,8 @@ export function SocketProvider({ user, children }) {
   const autoRejectTimerRef = useRef(null);
   const endCallTimerRef = useRef(null);
   const callDocUnsubRef = useRef(null);
+  const callDirectionRef = useRef('outgoing'); // 'outgoing' when calling, 'incoming' when accepting
+  const callTypeRef = useRef('video');
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
@@ -181,6 +184,16 @@ export function SocketProvider({ user, children }) {
       // Call was rejected by the other side
       if (data.status === 'rejected' && callStateRef.current === 'calling') {
         console.log('[CallContext] Call rejected');
+        // Save rejected call to history (caller side)
+        saveCallRecord(user.uid, {
+          peerId: callPeerRef.current?.uid || '',
+          peerName: callPeerRef.current?.name || 'User',
+          type: callTypeRef.current,
+          direction: 'outgoing',
+          status: 'missed',
+          duration: 0,
+        }).catch(e => console.warn('[CallContext] Failed to save call history:', e));
+
         setCallState('idle');
         setCallPeer(null);
         setIncomingCallInfo(null);
@@ -191,6 +204,16 @@ export function SocketProvider({ user, children }) {
       // Other user is busy
       if (data.status === 'busy' && callStateRef.current === 'calling') {
         console.log('[CallContext] User is busy');
+        // Save to call history
+        saveCallRecord(user.uid, {
+          peerId: callPeerRef.current?.uid || '',
+          peerName: callPeerRef.current?.name || 'User',
+          type: callTypeRef.current,
+          direction: 'outgoing',
+          status: 'missed',
+          duration: 0,
+        }).catch(e => console.warn('[CallContext] Failed to save call history:', e));
+
         setCallEndInfo({
           peerName: callPeerRef.current?.name || 'User',
           duration: 0,
@@ -211,6 +234,16 @@ export function SocketProvider({ user, children }) {
       // Call ended by the other side
       if (data.status === 'ended' && (callStateRef.current === 'connected' || callStateRef.current === 'calling')) {
         console.log('[CallContext] Call ended by remote');
+        // Save to call history
+        saveCallRecord(user.uid, {
+          peerId: callPeerRef.current?.uid || '',
+          peerName: callPeerRef.current?.name || 'Unknown',
+          type: callTypeRef.current,
+          direction: callDirectionRef.current,
+          status: data.duration > 0 ? 'answered' : 'missed',
+          duration: data.duration || 0,
+        }).catch(e => console.warn('[CallContext] Failed to save call history:', e));
+
         setCallEndInfo({
           peerName: callPeerRef.current?.name || 'Unknown',
           duration: data.duration || 0,
@@ -256,6 +289,9 @@ export function SocketProvider({ user, children }) {
 
     console.log('[CallContext] Calling user:', targetName, targetUid);
 
+    callDirectionRef.current = 'outgoing';
+    callTypeRef.current = callType;
+
     setCallPeer({
       socketId: null,
       uid: targetUid,
@@ -289,6 +325,16 @@ export function SocketProvider({ user, children }) {
           try {
             await updateDoc(callRef, { status: 'ended' });
           } catch (e) {}
+          // Save to call history
+          saveCallRecord(user.uid, {
+            peerId: targetUid,
+            peerName: targetName || 'User',
+            type: callType,
+            direction: 'outgoing',
+            status: 'missed',
+            duration: 0,
+          }).catch(e => console.warn('[CallContext] Failed to save call history:', e));
+
           setCallEndInfo({
             peerName: targetName || 'User',
             duration: 0,
@@ -322,6 +368,9 @@ export function SocketProvider({ user, children }) {
 
     console.log('[CallContext] Accepting call from', callerName);
 
+    callDirectionRef.current = 'incoming';
+    callTypeRef.current = incomingCallInfo.callType || 'video';
+
     setCallPeer({
       socketId: null,
       uid: callerUid,
@@ -354,6 +403,18 @@ export function SocketProvider({ user, children }) {
 
     console.log('[CallContext] Rejecting call');
 
+    // Save rejected call to history (callee side)
+    if (incomingCallInfo) {
+      saveCallRecord(user.uid, {
+        peerId: incomingCallInfo.callerUid || '',
+        peerName: incomingCallInfo.callerName || 'Unknown',
+        type: incomingCallInfo.callType || 'video',
+        direction: 'incoming',
+        status: 'missed',
+        duration: 0,
+      }).catch(e => console.warn('[CallContext] Failed to save call history:', e));
+    }
+
     try {
       await updateDoc(doc(db, 'calls', activeCallId), {
         status: 'rejected',
@@ -371,7 +432,7 @@ export function SocketProvider({ user, children }) {
       clearTimeout(autoRejectTimerRef.current);
       autoRejectTimerRef.current = null;
     }
-  }, [activeCallId]);
+  }, [activeCallId, incomingCallInfo]);
 
   // ── End current call ──
   const endCall = useCallback(async (duration) => {
@@ -393,6 +454,16 @@ export function SocketProvider({ user, children }) {
         console.warn('[CallContext] Failed to update call end status:', e);
       }
     }
+
+    // Save to call history
+    saveCallRecord(user.uid, {
+      peerId: callPeerRef.current?.uid || '',
+      peerName: callPeerRef.current?.name || 'Unknown',
+      type: callTypeRef.current,
+      direction: callDirectionRef.current,
+      status: duration > 0 ? 'answered' : 'missed',
+      duration: duration || 0,
+    }).catch(e => console.warn('[CallContext] Failed to save call history:', e));
 
     setCallEndInfo({
       peerName: callPeerRef.current?.name || 'Unknown',
