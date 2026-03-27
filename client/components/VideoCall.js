@@ -164,9 +164,6 @@ export default function VideoCall({ userName, peerInfo }) {
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
           ],
         };
         if (!cancelled) {
@@ -721,7 +718,7 @@ export default function VideoCall({ userName, peerInfo }) {
         await pc.setLocalDescription(offer);
         socket.emit('offer', { targetSocketId: target, offer });
 
-        // Retry after 5 seconds if no answer received
+        // Retry after 8 seconds if no answer received (allows time for slow mobile media setup)
         if (retryCount < 3) {
           offerRetryTimerRef.current = setTimeout(() => {
             if (!answerReceivedRef.current && isMountedRef.current) {
@@ -729,7 +726,7 @@ export default function VideoCall({ userName, peerInfo }) {
               console.log('[VideoCall] No answer received, retrying offer...');
               sendOffer();
             }
-          }, 5000);
+          }, 8000);
         }
       } catch (err) {
         console.error('[VideoCall] Error creating offer:', err);
@@ -766,6 +763,21 @@ export default function VideoCall({ userName, peerInfo }) {
       }
     };
   }, [isCallConnected]);
+
+  // ── Connection timeout: gracefully end call if WebRTC can't connect ──
+  useEffect(() => {
+    // Only start timeout when signaling says 'connected' but ICE hasn't connected yet
+    if (callState !== 'connected' || isCallConnected) return;
+
+    const connectionTimeout = setTimeout(() => {
+      if (isMountedRef.current) {
+        console.log('[VideoCall] Connection timeout — unable to establish peer connection after 30s');
+        handleEndCall();
+      }
+    }, 30000);
+
+    return () => clearTimeout(connectionTimeout);
+  }, [callState, isCallConnected, handleEndCall]);
 
   // ── Attach remote stream to video element when it changes ──
   useEffect(() => {
