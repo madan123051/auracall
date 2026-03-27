@@ -26,6 +26,7 @@ import {
   collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
   query, where, orderBy, limit, serverTimestamp, addDoc, getDoc, getDocs
 } from 'firebase/firestore';
+import { setupPresence } from './presence';
 
 const SocketContext = createContext(null);
 
@@ -51,6 +52,18 @@ export function SocketProvider({ user, children }) {
   useEffect(() => { callStateRef.current = callState; }, [callState]);
   useEffect(() => { callPeerRef.current = callPeer; }, [callPeer]);
   useEffect(() => { activeCallIdRef.current = activeCallId; }, [activeCallId]);
+
+  // ── FIX: Start presence heartbeat so this user shows "online" ──
+  // setupPresence was exported from presence.js but NEVER CALLED anywhere.
+  // Lumina calls startActivityTracking() in its app init — AuraCall was missing this.
+  useEffect(() => {
+    if (!user?.uid) return;
+    console.log('[CallContext] Starting presence heartbeat for', user.uid);
+    const cleanup = setupPresence(user.uid);
+    return () => {
+      cleanup();
+    };
+  }, [user?.uid]);
 
   // ── Clean up stale calls on mount ──
   // FIX: Use single-field query + client-side filtering to avoid composite index issues.
