@@ -1,197 +1,158 @@
-import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { io } from 'socket.io-client';
-import { auth } from './firebase'; // import the auth instance for token refresh
+/**
+ * =============================================================================
+ * AuraCall — Call Context (Firestore-Based)
+ * =============================================================================
+ * Replaces Socket.io with Firestore for call signaling.
+ * Same React context API as before — VideoCall.js and IncomingCallOverlay.js
+ * continue to use useSocket() without changes.
+ *
+ * How calls work now:
+ * 1. Caller creates doc in Firestore `calls/{callId}`
+ * 2. Callee listens for incoming calls via onSnapshot query
+ * 3. Accept/reject updates the call doc status
+ * 4. WebRTC signaling (offer/answer/ICE) happens via call doc fields + subcollections
+ * 5. No external server needed!
+ *
+ * Firestore structure:
+ *   calls/{callId} → { callerUid, calleeUid, callerName, calleeName, callType, status, offer, answer, createdAt }
+ *   calls/{callId}/callerCandidates/{id} → { candidate }
+ *   calls/{callId}/calleeCandidates/{id} → { candidate }
+ * =============================================================================
+ */
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { db } from './firebase';
+import {
+  collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
+  query, where, orderBy, limit, serverTimestamp, addDoc, getDoc, getDocs
+} from 'firebase/firestore';
 
 const SocketContext = createContext(null);
 
 export function SocketProvider({ user, children }) {
   // user = { uid, displayName, photoURL }
-  const [socket, setSocket] = useState(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState([]);
-  const [callState, setCallState] = useState('idle'); // 'idle' | 'calling' | 'incoming' | 'connected' | 'ended'
+  const [isConnected, setIsConnected] = useState(true); // Always "connected" with Firestore
+  const [onlineUsers, setOnlineUsers] = useState([]); // Now handled by presence.js — kept for API compat
+  const [callState, setCallState] = useState('idle');
   const [incomingCallInfo, setIncomingCallInfo] = useState(null);
-  const [callPeer, setCallPeer] = useState(null); // { socketId, uid, name }
-  const [callEndInfo, setCallEndInfo] = useState(null); // { peerName, duration, reason }
-  const [callRoom, setCallRoom] = useState(null); // dynamic call room ID
+  const [callPeer, setCallPeer] = useState(null);
+  const [callEndInfo, setCallEndInfo] = useState(null);
+  const [callRoom, setCallRoom] = useState(null); // = callId for Firestore signaling
+  const [activeCallId, setActiveCallId] = useState(null);
 
-  const socketRef = useRef(null);
   const callStateRef = useRef('idle');
   const callPeerRef = useRef(null);
+  const activeCallIdRef = useRef(null);
   const autoRejectTimerRef = useRef(null);
   const endCallTimerRef = useRef(null);
+  const callDocUnsubRef = useRef(null);
 
   // Keep refs in sync
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
+  useEffect(() => { callPeerRef.current = callPeer; }, [callPeer]);
+  useEffect(() => { activeCallIdRef.current = activeCallId; }, [activeCallId]);
+
+  // ── Clean up stale calls on mount ──
   useEffect(() => {
-    callStateRef.current = callState;
-  }, [callState]);
+    if (!user?.uid) return;
 
-  useEffect(() => {
-    callPeerRef.current = callPeer;
-  }, [callPeer]);
-
-  // ── Connect socket when user exists ──
-  useEffect(() => {
-    if (!user || !user.uid) return;
-
-    let cancelled = false;
-
-    async function connectSocket() {
-      // Get Firebase auth token if available
-      let token = null;
+    // Clean up any stale "calling" docs where this user is caller (from previous sessions)
+    async function cleanStaleCalls() {
       try {
-        token = await auth.currentUser?.getIdToken();
-      } catch (err) {
-        console.warn('[Socket] Could not get auth token:', err.message);
+        const q = query(
+          collection(db, 'calls'),
+          where('callerUid', '==', user.uid),
+          where('status', 'in', ['calling', 'connected'])
+        );
+        const snap = await getDocs(q);
+        snap.forEach(async (docSnap) => {
+          const data = docSnap.data();
+          const createdAt = data.createdAt?.toMillis?.() || 0;
+          // If older than 2 minutes, it's stale
+          if (Date.now() - createdAt > 2 * 60 * 1000) {
+            await updateDoc(docSnap.ref, { status: 'ended' }).catch(() => {});
+          }
+        });
+      } catch (e) {
+        // Ignore cleanup errors
       }
+    }
+    cleanStaleCalls();
+  }, [user?.uid]);
 
-      if (cancelled) return;
+  // ── Listen for incoming calls (where I am the callee) ──
+  useEffect(() => {
+    if (!user?.uid) return;
 
-      const s = io(SOCKET_URL, {
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        auth: { token },
-      });
+    const q = query(
+      collection(db, 'calls'),
+      where('calleeUid', '==', user.uid),
+      where('status', '==', 'calling')
+    );
 
-      socketRef.current = s;
-      setSocket(s);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
 
-      s.on('connect', () => {
-        console.log('[Socket] Connected:', s.id);
-        setIsConnected(true);
-        // Join room with uid
-        s.emit('join-room', {
-          userName: user.displayName || 'User',
-          room: 'lobby',
-          uid: user.uid,
-        });
-      });
+          // Skip if call is too old (> 60 seconds — missed call)
+          const createdAt = data.createdAt?.toMillis?.() || 0;
+          if (createdAt && Date.now() - createdAt > 60000) {
+            return;
+          }
 
-      s.on('disconnect', () => {
-        console.log('[Socket] Disconnected');
-        setIsConnected(false);
-      });
+          // Ignore if already in a call
+          if (callStateRef.current === 'connected' || callStateRef.current === 'calling') {
+            console.log('[CallContext] Already in call, auto-rejecting incoming');
+            updateDoc(change.doc.ref, { status: 'busy' }).catch(() => {});
+            return;
+          }
 
-      s.on('reconnect', () => {
-        console.log('[Socket] Reconnected:', s.id);
-        setIsConnected(true);
-        // Re-join room on reconnect
-        s.emit('join-room', {
-          userName: user.displayName || 'User',
-          room: 'lobby',
-          uid: user.uid,
-        });
-      });
-
-      // ── Auth error handling ──
-      s.on('connect_error', (err) => {
-        if (err.message === 'Authentication required' || err.message === 'Invalid token') {
-          console.error('[Socket] Auth error, refreshing token...');
-          // Try to refresh and reconnect
-          auth.currentUser?.getIdToken(true).then((newToken) => {
-            s.auth = { token: newToken };
-            s.connect();
-          }).catch((refreshErr) => {
-            console.error('[Socket] Token refresh failed:', refreshErr.message);
+          console.log('[CallContext] Incoming call from', data.callerName);
+          setActiveCallId(change.doc.id);
+          setIncomingCallInfo({
+            callId: change.doc.id,
+            callerSocketId: null, // Not needed for Firestore signaling
+            callerName: data.callerName || 'Unknown',
+            callerUid: data.callerUid,
+            callType: data.callType || 'video',
           });
-        } else {
-          console.error('[Socket] Connection error:', err.message);
+          setCallState('incoming');
         }
       });
+    });
 
-      // ── Online users ──
-      s.on('online-users', (users) => {
-        setOnlineUsers(users.filter((u) => u.socketId !== s.id));
-      });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
-      // ── Incoming call ──
-      s.on('incoming-call', ({ callerSocketId, callerName, callerUid, callType }) => {
-        console.log('[Socket] Incoming call from', callerName, callerUid);
-        // Ignore if already in a call
-        if (callStateRef.current === 'connected' || callStateRef.current === 'calling') {
-          console.log('[Socket] Already in call, auto-rejecting');
-          s.emit('reject-call', { callerSocketId });
-          return;
-        }
+  // ── Listen for status changes on the active call doc ──
+  useEffect(() => {
+    if (!activeCallId) {
+      if (callDocUnsubRef.current) {
+        callDocUnsubRef.current();
+        callDocUnsubRef.current = null;
+      }
+      return;
+    }
 
-        setIncomingCallInfo({ callerSocketId, callerName, callerUid, callType });
-        setCallState('incoming');
-      });
+    const callRef = doc(db, 'calls', activeCallId);
+    const unsub = onSnapshot(callRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
 
-      // ── Call accepted ──
-      s.on('call-accepted', ({ accepterSocketId, accepterName, accepterUid }) => {
-        console.log('[Socket] Call accepted by', accepterName);
-        setCallPeer((prev) => ({
-          ...(prev || {}),
-          socketId: accepterSocketId,
-          uid: accepterUid || prev?.uid || null,
-          name: accepterName || prev?.name || 'Unknown',
-        }));
-        setCallState('connected');
-      });
-
-      // ── Joined call room ──
-      s.on('joined-call-room', ({ roomId }) => {
-        console.log('[Socket] Joined call room:', roomId);
-        setCallRoom(roomId);
-      });
-
-      // ── Call rejected ──
-      s.on('call-rejected', ({ rejecterName }) => {
-        console.log('[Socket] Call rejected by', rejecterName);
+      // Call was rejected by the other side
+      if (data.status === 'rejected' && callStateRef.current === 'calling') {
+        console.log('[CallContext] Call rejected');
         setCallState('idle');
         setCallPeer(null);
         setIncomingCallInfo(null);
-      });
-
-      // ── Call ended (remote) ──
-      s.on('call-ended', ({ senderName, duration }) => {
-        console.log('[Socket] Call ended by', senderName, 'duration:', duration);
-        setCallEndInfo({
-          peerName: senderName || 'Unknown',
-          duration: duration || 0,
-          reason: 'Remote ended the call',
-        });
-        setCallState('ended');
-        setCallPeer(null);
+        setActiveCallId(null);
         setCallRoom(null);
-        setIncomingCallInfo(null);
+      }
 
-        // Auto-dismiss after 3 seconds
-        if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
-        endCallTimerRef.current = setTimeout(() => {
-          setCallState('idle');
-          setCallEndInfo(null);
-          endCallTimerRef.current = null;
-        }, 3000);
-      });
-
-      // ── Call failed (user offline) ──
-      s.on('call-failed', ({ reason, message }) => {
-        console.log('[Socket] Call failed:', reason, message);
-        setCallEndInfo({
-          peerName: callPeerRef.current?.name || 'User',
-          duration: 0,
-          reason: reason === 'offline' ? 'User is not online' : (message || 'Call failed'),
-        });
-        setCallState('ended');
-        setCallPeer(null);
-        // Auto-dismiss after 3 seconds
-        if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
-        endCallTimerRef.current = setTimeout(() => {
-          setCallState('idle');
-          setCallEndInfo(null);
-          endCallTimerRef.current = null;
-        }, 3000);
-      });
-
-      // ── Call busy ──
-      s.on('call-busy', ({ targetUid, message }) => {
-        console.log('[Socket] Call busy:', targetUid, message);
+      // Other user is busy
+      if (data.status === 'busy' && callStateRef.current === 'calling') {
+        console.log('[CallContext] User is busy');
         setCallEndInfo({
           peerName: callPeerRef.current?.name || 'User',
           duration: 0,
@@ -199,79 +160,135 @@ export function SocketProvider({ user, children }) {
         });
         setCallState('ended');
         setCallPeer(null);
+        setCallRoom(null);
+
         if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
         endCallTimerRef.current = setTimeout(() => {
           setCallState('idle');
           setCallEndInfo(null);
-          endCallTimerRef.current = null;
+          setActiveCallId(null);
         }, 3000);
-      });
+      }
 
-      // ── Server-side error ──
-      s.on('error', ({ message }) => {
-        console.error('[Socket] Server error:', message);
-      });
-    }
+      // Call ended by the other side
+      if (data.status === 'ended' && (callStateRef.current === 'connected' || callStateRef.current === 'calling')) {
+        console.log('[CallContext] Call ended by remote');
+        setCallEndInfo({
+          peerName: callPeerRef.current?.name || 'Unknown',
+          duration: data.duration || 0,
+          reason: 'Call ended',
+        });
+        setCallState('ended');
+        setCallPeer(null);
+        setCallRoom(null);
+        setIncomingCallInfo(null);
 
-    connectSocket();
+        if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
+        endCallTimerRef.current = setTimeout(() => {
+          setCallState('idle');
+          setCallEndInfo(null);
+          setActiveCallId(null);
+        }, 3000);
+      }
 
+      // Call was accepted (I am the caller, other side accepted)
+      if (data.status === 'connected' && callStateRef.current === 'calling') {
+        console.log('[CallContext] Call accepted by', data.calleeName || callPeerRef.current?.name);
+        setCallPeer((prev) => ({
+          ...(prev || {}),
+          uid: data.calleeUid || prev?.uid,
+          name: data.calleeName || prev?.name || 'Unknown',
+        }));
+        setCallState('connected');
+      }
+    });
+
+    callDocUnsubRef.current = unsub;
     return () => {
-      cancelled = true;
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-      setSocket(null);
-      setIsConnected(false);
-      if (endCallTimerRef.current) {
-        clearTimeout(endCallTimerRef.current);
-        endCallTimerRef.current = null;
-      }
+      unsub();
+      callDocUnsubRef.current = null;
     };
-  }, [user?.uid, user?.displayName]);
+  }, [activeCallId]);
 
-  // ── Call a user (by socketId, uid, or both) ──
-  const callUser = useCallback((targetSocketId, targetName, targetUid, callType = 'video') => {
-    if (!socketRef.current) return;
+  // ── Call a user by UID ──
+  const callUser = useCallback(async (targetSocketId, targetName, targetUid, callType = 'video') => {
+    if (!user?.uid) return;
+
+    console.log('[CallContext] Calling user:', targetName, targetUid);
 
     setCallPeer({
-      socketId: targetSocketId || null,
-      uid: targetUid || null,
+      socketId: null,
+      uid: targetUid,
       name: targetName || 'Unknown',
     });
     setCallState('calling');
 
-    if (targetUid && !targetSocketId) {
-      // Call by UID (Firebase friends integration)
-      socketRef.current.emit('call-user-by-uid', {
-        targetUid,
-        callerName: user?.displayName || 'User',
-        callerUid: user?.uid,
-        callType,
+    // Create call document in Firestore
+    const callRef = doc(collection(db, 'calls'));
+    const callId = callRef.id;
+
+    try {
+      await setDoc(callRef, {
+        callerUid: user.uid,
+        callerName: user.displayName || 'User',
+        calleeUid: targetUid,
+        calleeName: targetName || 'Unknown',
+        callType: callType,
+        status: 'calling',
+        createdAt: serverTimestamp(),
       });
-    } else if (targetSocketId) {
-      // Call by socket ID (legacy/lobby)
-      socketRef.current.emit('call-user', {
-        targetSocketId,
-        callerName: user?.displayName || 'User',
-        callerSocketId: socketRef.current.id,
-        callType,
-      });
+
+      setActiveCallId(callId);
+      setCallRoom(callId);
+
+      // Auto-timeout after 45 seconds if not answered
+      if (autoRejectTimerRef.current) clearTimeout(autoRejectTimerRef.current);
+      autoRejectTimerRef.current = setTimeout(async () => {
+        if (callStateRef.current === 'calling' && activeCallIdRef.current === callId) {
+          console.log('[CallContext] Call timeout — no answer');
+          try {
+            await updateDoc(callRef, { status: 'ended' });
+          } catch (e) {}
+          setCallEndInfo({
+            peerName: targetName || 'User',
+            duration: 0,
+            reason: 'No answer',
+          });
+          setCallState('ended');
+          setCallPeer(null);
+          setCallRoom(null);
+
+          if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
+          endCallTimerRef.current = setTimeout(() => {
+            setCallState('idle');
+            setCallEndInfo(null);
+            setActiveCallId(null);
+          }, 3000);
+        }
+      }, 45000);
+
+    } catch (error) {
+      console.error('[CallContext] Failed to create call:', error);
+      setCallState('idle');
+      setCallPeer(null);
     }
-  }, [user?.displayName, user?.uid]);
+  }, [user?.uid, user?.displayName]);
 
   // ── Accept incoming call ──
-  const acceptCall = useCallback(() => {
-    if (!socketRef.current || !incomingCallInfo) return;
+  const acceptCall = useCallback(async () => {
+    if (!activeCallId || !incomingCallInfo) return;
 
-    const { callerSocketId, callerName, callerUid } = incomingCallInfo;
+    const { callerUid, callerName } = incomingCallInfo;
+
+    console.log('[CallContext] Accepting call from', callerName);
 
     setCallPeer({
-      socketId: callerSocketId,
-      uid: callerUid || null,
+      socketId: null,
+      uid: callerUid,
       name: callerName || 'Unknown',
     });
     setCallState('connected');
+    setCallRoom(activeCallId);
     setIncomingCallInfo(null);
 
     if (autoRejectTimerRef.current) {
@@ -279,37 +296,66 @@ export function SocketProvider({ user, children }) {
       autoRejectTimerRef.current = null;
     }
 
-    socketRef.current.emit('accept-call', { callerSocketId, callerUid: callerUid || null });
-  }, [incomingCallInfo]);
+    // Update call status in Firestore
+    try {
+      await updateDoc(doc(db, 'calls', activeCallId), {
+        status: 'connected',
+        calleeName: user?.displayName || 'User',
+        answeredAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error('[CallContext] Failed to accept call:', error);
+    }
+  }, [activeCallId, incomingCallInfo, user?.displayName]);
 
   // ── Reject incoming call ──
-  const rejectCall = useCallback(() => {
-    if (!socketRef.current || !incomingCallInfo) return;
+  const rejectCall = useCallback(async () => {
+    if (!activeCallId) return;
 
-    socketRef.current.emit('reject-call', { callerSocketId: incomingCallInfo.callerSocketId });
+    console.log('[CallContext] Rejecting call');
+
+    try {
+      await updateDoc(doc(db, 'calls', activeCallId), {
+        status: 'rejected',
+      });
+    } catch (e) {
+      console.warn('[CallContext] Failed to update rejection:', e);
+    }
+
     setCallState('idle');
     setIncomingCallInfo(null);
+    setActiveCallId(null);
+    setCallRoom(null);
 
     if (autoRejectTimerRef.current) {
       clearTimeout(autoRejectTimerRef.current);
       autoRejectTimerRef.current = null;
     }
-  }, [incomingCallInfo]);
+  }, [activeCallId]);
 
-  // ── End current call (accepts optional duration) ──
-  const endCall = useCallback((duration) => {
-    if (!socketRef.current) return;
+  // ── End current call ──
+  const endCall = useCallback(async (duration) => {
+    console.log('[CallContext] Ending call, duration:', duration);
 
-    const peer = callPeerRef.current;
-    if (peer?.socketId) {
-      socketRef.current.emit('end-call', {
-        targetSocketId: peer.socketId,
-        duration: duration || 0,
-      });
+    if (autoRejectTimerRef.current) {
+      clearTimeout(autoRejectTimerRef.current);
+      autoRejectTimerRef.current = null;
+    }
+
+    if (activeCallIdRef.current) {
+      try {
+        await updateDoc(doc(db, 'calls', activeCallIdRef.current), {
+          status: 'ended',
+          endedAt: serverTimestamp(),
+          duration: duration || 0,
+        });
+      } catch (e) {
+        console.warn('[CallContext] Failed to update call end status:', e);
+      }
     }
 
     setCallEndInfo({
-      peerName: peer?.name || 'Unknown',
+      peerName: callPeerRef.current?.name || 'Unknown',
       duration: duration || 0,
       reason: 'You ended the call',
     });
@@ -318,21 +364,20 @@ export function SocketProvider({ user, children }) {
     setCallRoom(null);
     setIncomingCallInfo(null);
 
-    // Auto-dismiss after 3 seconds
     if (endCallTimerRef.current) clearTimeout(endCallTimerRef.current);
     endCallTimerRef.current = setTimeout(() => {
       setCallState('idle');
       setCallEndInfo(null);
-      endCallTimerRef.current = null;
+      setActiveCallId(null);
     }, 3000);
   }, []);
 
   return (
     <SocketContext.Provider
       value={{
-        socket,
-        isConnected,
-        onlineUsers,
+        socket: null, // No socket needed — kept for API compatibility
+        isConnected: true, // Always connected with Firestore
+        onlineUsers, // Now handled by presence.js watchPresence — kept for API compat
         callState,
         incomingCallInfo,
         callPeer,
@@ -343,7 +388,8 @@ export function SocketProvider({ user, children }) {
         setCallState,
         setCallPeer,
         callEndInfo,
-        callRoom,
+        callRoom, // This is now the Firestore callId
+        activeCallId, // NEW: the Firestore call doc ID
       }}
     >
       {children}
