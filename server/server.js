@@ -5,7 +5,11 @@ const cors = require('cors');
 
 const app = express();
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+// BUG FIX: Changed fallback from NEXT_PUBLIC_SOCKET_URL to CLIENT_URL.
+// NEXT_PUBLIC_SOCKET_URL is the SERVER's own URL (e.g., https://server.onrender.com),
+// NOT the client's URL. Using it as CORS origin blocks all client requests!
+// Set CLIENT_URL to your frontend URL (e.g., https://auracall.vercel.app)
+const CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.CLIENT_URL || 'http://localhost:3000';
 
 app.use(cors({
   origin: CORS_ORIGIN === '*' ? '*' : CORS_ORIGIN.split(',').map(s => s.trim()),
@@ -653,6 +657,7 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   const hasTurnConfig = !!(process.env.METERED_API_KEY || process.env.TURN_URL || process.env.TURN_SERVERS_JSON);
   console.log(`\n🚀  AuraCall Signaling Server running on http://localhost:${PORT}`);
+  console.log(`    CORS Origin: ${CORS_ORIGIN}`);
   console.log(`    Auth: ${firebaseAdmin ? 'Firebase Admin ✅' : 'Disabled ⚠️'}`);
   console.log(`    TURN: ${hasTurnConfig ? 'Configured ✅' : '❌ Not configured'}`);
   if (!hasTurnConfig) {
