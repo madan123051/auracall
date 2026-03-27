@@ -96,6 +96,7 @@ export default function VideoCall({ userName, peerInfo }) {
   const iceRestartAttemptRef = useRef(0);
   const disconnectTimerRef = useRef(null);
   const failedTimerRef = useRef(null);
+  const callTimerRef = useRef(0);
   const isMountedRef = useRef(true);
   const isCallerRef = useRef(callState === 'calling');
   const styleRef = useRef(null);
@@ -243,8 +244,8 @@ export default function VideoCall({ userName, peerInfo }) {
     pendingOfferRef.current = null;
     currentTargetRef.current = null;
 
-    contextEndCall(callTimer);
-  }, [contextEndCall, callTimer]);
+    contextEndCall(callTimerRef.current);
+  }, [contextEndCall]);
 
   // ── ICE restart ──
   const attemptIceRestart = useCallback(async () => {
@@ -583,7 +584,11 @@ export default function VideoCall({ userName, peerInfo }) {
       setCallPeer((prev) => prev ? { ...prev, socketId: senderSocketId } : prev);
 
       try {
-        const pc = createPeerConnection();
+        // Reuse existing PC for renegotiation (e.g., ICE restart), create new only if needed
+        let pc = peerConnectionRef.current;
+        if (!pc || pc.signalingState === 'closed') {
+          pc = createPeerConnection();
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
         for (const candidate of pendingCandidatesRef.current) {
@@ -698,6 +703,10 @@ export default function VideoCall({ userName, peerInfo }) {
     if (callState !== 'connected') return;
     if (!currentTargetRef.current) return;
 
+    // Don't re-initiate if PeerConnection already exists and is negotiating or connected
+    if (peerConnectionRef.current &&
+        !['closed', 'failed'].includes(peerConnectionRef.current.iceConnectionState || '')) return;
+
     let retryCount = 0;
     answerReceivedRef.current = false;
 
@@ -763,6 +772,9 @@ export default function VideoCall({ userName, peerInfo }) {
       }
     };
   }, [isCallConnected]);
+
+  // Keep callTimerRef in sync (avoids recreating handleEndCall every second)
+  useEffect(() => { callTimerRef.current = callTimer; }, [callTimer]);
 
   // ── Connection timeout: gracefully end call if WebRTC can't connect ──
   useEffect(() => {
