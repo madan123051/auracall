@@ -148,7 +148,6 @@
   let currentCallContact = null;
   let userLanguage = localStorage.getItem('auracall-language') || 'en';
   let encryptionMode = localStorage.getItem('auracall-encryption-mode') || 'e2e';
-  let autoTranslateEnabled = localStorage.getItem('auracall-auto-translate') !== 'false';
   const languageNames = { en: 'English', hi: 'Hindi', ja: 'Japanese', ne: 'Nepali', zh: 'Chinese', es: 'Spanish', fr: 'French', ar: 'Arabic', ko: 'Korean' };
   const contactLanguages = { 0: 'hi', 1: 'en', 2: 'hi', 3: 'en', 4: 'hi', 5: 'en', 6: 'hi', 7: 'en' };
 
@@ -206,12 +205,7 @@
 
   function updateSecurityStatus() {
     const el = $('#chat-security-status');
-    if (el) el.textContent = `${encryptionMode === 'e2e' ? '🔐 E2E encrypted' : '💾 Backup encrypted'} · ${autoTranslateEnabled ? '🌐 Auto-translate on' : '🌐 Original text'}`;
-    const pair = $('#chat-language-pair');
-    if (pair && currentChatContactId !== null) {
-      const peerLang = contactLanguages[currentChatContactId] || 'en';
-      pair.textContent = `${languageNames[userLanguage]} ⇄ ${languageNames[peerLang] || 'Auto'}`;
-    }
+    if (el) el.textContent = `${encryptionMode === 'e2e' ? '🔐 E2E encrypted' : '💾 Backup encrypted'} · 🌐 ${languageNames[userLanguage]} display`;
     const btn = $('#btn-encryption-mode');
     if (btn) btn.textContent = encryptionMode === 'e2e' ? '🔐' : '💾';
   }
@@ -359,7 +353,6 @@
           <div class="convo-info">
             <div class="convo-name">${c.name}</div>
             <div class="convo-preview">🔐 ${escapeHtml(lastMsg)}</div>
-            <div class="convo-language">🌐 ${languageNames[userLanguage]} display · ${encryptionMode === 'e2e' ? 'E2E' : 'Backup'} protected</div>
           </div>
           <div class="convo-right">
             <span class="convo-time ${hasUnread ? 'unread' : ''}">${convo.lastTime}</span>
@@ -462,7 +455,6 @@
     if (!convo) return;
     convo.messages.forEach(msg => {
       if (msg.sent) return;
-      if (!autoTranslateEnabled) { msg.displayText = msg.originalText || msg.text; msg.translated = false; return; }
       const source = msg.sourceLanguage || detectLanguage(msg.originalText || msg.text);
       msg.sourceLanguage = source;
       msg.originalText = msg.originalText || msg.text;
@@ -864,12 +856,10 @@
       }
     });
 
-    $('#language-select')?.addEventListener('change', (e) => { userLanguage = e.target.value; localStorage.setItem('auracall-language', userLanguage); updateSecurityStatus(); if (currentChatContactId !== null) { translateConversationForDisplay(currentChatContactId); renderMessages(currentChatContactId); } });
+    $('#language-select')?.addEventListener('change', (e) => { userLanguage = e.target.value; localStorage.setItem('auracall-language', userLanguage); updateSecurityStatus(); if (currentChatContactId !== null) renderMessages(currentChatContactId); });
     $('#encryption-select')?.addEventListener('change', (e) => { encryptionMode = e.target.value; localStorage.setItem('auracall-encryption-mode', encryptionMode); updateSecurityStatus(); });
-    $('#auto-translate-toggle')?.addEventListener('change', (e) => { autoTranslateEnabled = e.target.checked; localStorage.setItem('auracall-auto-translate', String(autoTranslateEnabled)); updateSecurityStatus(); if (currentChatContactId !== null) { translateConversationForDisplay(currentChatContactId); renderMessages(currentChatContactId); } });
     const langSelect = $('#language-select'); if (langSelect) langSelect.value = userLanguage;
     const encSelect = $('#encryption-select'); if (encSelect) encSelect.value = encryptionMode;
-    const autoToggle = $('#auto-translate-toggle'); if (autoToggle) autoToggle.checked = autoTranslateEnabled;
     updateSecurityStatus();
 
     // Incoming call buttons
