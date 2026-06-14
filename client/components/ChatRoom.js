@@ -328,7 +328,14 @@ const styles = {
 
 export default function ChatRoom({ peer, onBack, onStartCall }) {
   const { currentUser } = useAuth();
-  const { language, languages, autoTranslate, t } = useLanguage();
+  const {
+    translationLanguage,
+    translationLanguages,
+    setTranslationLanguage,
+    autoTranslate,
+    setAutoTranslate,
+    t,
+  } = useLanguage();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -349,7 +356,8 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
   const attemptedTranslationsRef = useRef(new Set());
 
   const chatId = currentUser && peer ? getChatId(currentUser.uid, peer.uid) : null;
-  const targetLanguage = languages.find((item) => item.code === language)?.label || "English";
+  const targetLanguage =
+    translationLanguages.find((item) => item.code === translationLanguage)?.label || "English";
   const peerName = getFriendlyName(peerProfile?.displayName || peer?.displayName, peer?.uid);
   const peerPhoto = peerProfile?.photoURL || peer?.photoURL || "";
 
@@ -368,6 +376,12 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       cancelled = true;
     };
   }, [peer?.uid]);
+
+  useEffect(() => {
+    attemptedTranslationsRef.current = new Set();
+    setTranslations({});
+    setShowOriginal({});
+  }, [translationLanguage]);
 
   // Listen to messages
   useEffect(() => {
@@ -532,6 +546,46 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
     window.setTimeout(() => setActionNotice(""), 2200);
   };
 
+  const translateMessage = async (message, automatic = false) => {
+    if (!message?.id || !message.text || message.senderId === currentUser.uid) return;
+    if (translationPending && translationPending !== message.id) {
+      setAiNote("Wait for the current translation to finish.");
+      return;
+    }
+
+    if (automatic) attemptedTranslationsRef.current.add(message.id);
+    setTranslationPending(message.id);
+    setAiNote("");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+    try {
+      const result = await requestAi(
+        {
+          action: "translate",
+          text: message.text,
+          targetLanguage,
+          sourceLanguage: "Auto detect",
+        },
+        controller.signal
+      );
+      if (result.fallback) {
+        setAiNote("Live translation needs OPENAI_API_KEY on the server.");
+      } else if (result.text) {
+        setTranslations((current) => ({ ...current, [message.id]: result.text }));
+        setShowOriginal((current) => ({ ...current, [message.id]: false }));
+      }
+    } catch (error) {
+      setAiNote(
+        error.name === "AbortError"
+          ? "Translation took too long. Tap Translate to retry."
+          : error.message || "Translation is temporarily unavailable."
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      setTranslationPending("");
+    }
+  };
+
   const runAiAction = async (action) => {
     const recentMessages = messages
       .slice(-10)
@@ -544,6 +598,11 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
 
     if (!sourceText) {
       setAiNote("There is not enough conversation context yet.");
+      return;
+    }
+
+    if (action === "translate" && latestIncoming) {
+      await translateMessage(latestIncoming);
       return;
     }
 
@@ -564,13 +623,6 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       if (action === "smart_reply") {
         setInputText(result.text);
         if (result.fallback) setAiNote("Using local smart-reply fallback. Add OPENAI_API_KEY for full AI.");
-      } else if (action === "translate" && latestIncoming) {
-        attemptedTranslationsRef.current.add(latestIncoming.id);
-        if (result.fallback) {
-          setAiNote("Add OPENAI_API_KEY to enable live AI translation.");
-        } else {
-          setTranslations((current) => ({ ...current, [latestIncoming.id]: result.text }));
-        }
       } else {
         setAiNote(result.text);
       }
@@ -695,11 +747,37 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
 
       <div className="aura-chat-security" style={styles.securityStrip}>
         <span><UiIcon name="lock" size={14} strokeWidth={2} /> Protected</span>
-        <span><UiIcon name="globe" size={15} /> Auto → {targetLanguage}</span>
+        <span><UiIcon name="globe" size={15} /> {autoTranslate ? "Auto" : "Manual"} → {targetLanguage}</span>
         <span className={aiLoading || translationPending ? "is-working" : ""}>
           <i />
           {aiLoading ? "AI working" : translationPending ? "Translating" : "AI ready"}
         </span>
+      </div>
+      <div className="aura-chat-translation-controls">
+        <label>
+          <UiIcon name="globe" size={15} />
+          <span>Translate to</span>
+          <select
+            value={translationLanguage}
+            onChange={(event) => setTranslationLanguage(event.target.value)}
+            aria-label="Translation language"
+          >
+            {translationLanguages.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.nativeLabel} · {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className={autoTranslate ? "is-active" : ""}
+          type="button"
+          onClick={() => setAutoTranslate(!autoTranslate)}
+          aria-pressed={autoTranslate}
+        >
+          <i />
+          {autoTranslate ? "Auto translate ON" : "Manual translate"}
+        </button>
       </div>
       <div className="aura-chat-ai-rail" style={styles.aiRail}>
         <button style={styles.aiChip} onClick={() => runAiAction("smart_reply")} disabled={Boolean(aiLoading)}>
@@ -797,17 +875,25 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
                       : msg.text}
                   </div>
                   <div className="aura-message-meta">
-                    {translations[msg.id] && (
-                      <button
-                        type="button"
-                        style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
-                        onClick={() =>
-                          setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }))
+                    <button
+                      type="button"
+                      style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
+                      disabled={Boolean(translationPending)}
+                      onClick={() => {
+                        if (translations[msg.id]) {
+                          setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }));
+                        } else {
+                          translateMessage(msg);
                         }
-                      >
-                        <UiIcon name="globe" size={11} /> {showOriginal[msg.id] ? t("translated") : t("original")}
-                      </button>
-                    )}
+                      }}
+                    >
+                      <UiIcon name="globe" size={11} />
+                      {translationPending === msg.id
+                        ? "Translating..."
+                        : translations[msg.id]
+                          ? showOriginal[msg.id] ? t("translated") : t("original")
+                          : t("translate")}
+                    </button>
                     <span className="aura-message-protected" title="Protected message">
                       <UiIcon name="lock" size={10} strokeWidth={2} />
                     </span>

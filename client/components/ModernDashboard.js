@@ -36,7 +36,14 @@ function Avatar({ photoURL, name, size = 48 }) {
 
 export default function ModernDashboard({ onStartVideoCall }) {
   const { currentUser } = useAuth();
-  const { t } = useLanguage();
+  const {
+    t,
+    translationLanguage,
+    translationLanguages,
+    setTranslationLanguage,
+    autoTranslate,
+    setAutoTranslate,
+  } = useLanguage();
   const [activeTab, setActiveTab] = useState("chats");
   const [chats, setChats] = useState([]);
   const [callHistory, setCallHistory] = useState([]);
@@ -341,8 +348,33 @@ export default function ModernDashboard({ onStartVideoCall }) {
               <p>Talk, call, translate, and follow up from one private communication space.</p>
               <div className="modern-hero-pills">
                 <span>AI smart replies</span>
-                <span>Auto translation</span>
                 <span>Protected calling</span>
+              </div>
+              <div className="translation-quick-control">
+                <label>
+                  <UiIcon name="globe" size={16} />
+                  <span>Messages to</span>
+                  <select
+                    value={translationLanguage}
+                    onChange={(event) => setTranslationLanguage(event.target.value)}
+                    aria-label="Message translation language"
+                  >
+                    {translationLanguages.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.nativeLabel} · {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className={autoTranslate ? "is-active" : ""}
+                  type="button"
+                  onClick={() => setAutoTranslate(!autoTranslate)}
+                  aria-pressed={autoTranslate}
+                >
+                  <i />
+                  {autoTranslate ? "Auto ON" : "Manual"}
+                </button>
               </div>
             </div>
             <div className="modern-hero-stats">

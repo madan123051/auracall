@@ -186,6 +186,7 @@ export async function updateUserPreferences(uid, preferences) {
     {
       preferences: {
         language: preferences.language || "en",
+        translationLanguage: preferences.translationLanguage || preferences.language || "en",
         autoTranslate: preferences.autoTranslate !== false,
       },
       updatedAt: serverTimestamp(),

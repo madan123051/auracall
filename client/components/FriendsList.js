@@ -1,239 +1,48 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import {
+  acceptFriendRequest,
   getFriends,
   getPendingRequests,
   getSentRequests,
-  sendFriendRequest,
-  acceptFriendRequest,
   rejectFriendRequest,
   removeFriend,
   searchUsers,
+  sendFriendRequest,
 } from "../lib/friends";
-import { watchMultiplePresence, formatLastSeen } from "../lib/presence";
+import { formatLastSeen, watchMultiplePresence } from "../lib/presence";
 import UiIcon from "./UiIcon";
 
-const THEME = {
-  bg: "#070B10",
-  cardBg: "#0D1117",
-  teal: "#00BFA6",
-  tealHover: "#00E5C3",
-  text: "#FFFFFF",
-  textSecondary: "#8B949E",
-  border: "#21262D",
-  inputBg: "#161B22",
-  onlineGreen: "#2EA043",
-  offlineGray: "#484F58",
-  dangerRed: "#F85149",
-};
+const TABS = [
+  { key: "friends", label: "Friends", icon: "users" },
+  { key: "requests", label: "Requests", icon: "inbox" },
+  { key: "discover", label: "Discover", icon: "search" },
+];
 
-const styles = {
-  container: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    backgroundColor: THEME.bg,
-    color: THEME.text,
-  },
-  tabs: {
-    display: "flex",
-    borderBottom: `1px solid ${THEME.border}`,
-    backgroundColor: THEME.cardBg,
-    flexShrink: 0,
-  },
-  tab: {
-    flex: 1,
-    padding: "14px 16px",
-    textAlign: "center",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: "600",
-    color: THEME.textSecondary,
-    border: "none",
-    background: "none",
-    transition: "all 0.2s ease",
-    position: "relative",
-    letterSpacing: "0.3px",
-  },
-  activeTab: {
-    color: THEME.teal,
-  },
-  tabIndicator: {
-    position: "absolute",
-    bottom: 0,
-    left: "20%",
-    right: "20%",
-    height: "2px",
-    backgroundColor: THEME.teal,
-    borderRadius: "2px 2px 0 0",
-  },
-  badge: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: "18px",
-    height: "18px",
-    borderRadius: "9px",
-    backgroundColor: THEME.dangerRed,
-    color: THEME.text,
-    fontSize: "11px",
-    fontWeight: "700",
-    marginLeft: "6px",
-    padding: "0 5px",
-  },
-  content: {
-    flex: 1,
-    overflowY: "auto",
-    padding: "12px",
-  },
-  searchBox: {
-    padding: "12px",
-    borderBottom: `1px solid ${THEME.border}`,
-    flexShrink: 0,
-  },
-  searchInput: {
-    width: "100%",
-    padding: "12px 16px",
-    borderRadius: "12px",
-    border: `1px solid ${THEME.border}`,
-    backgroundColor: THEME.inputBg,
-    color: THEME.text,
-    fontSize: "14px",
-    outline: "none",
-    boxSizing: "border-box",
-    transition: "border-color 0.2s ease",
-  },
-  card: {
-    display: "flex",
-    alignItems: "center",
-    padding: "12px 14px",
-    marginBottom: "8px",
-    borderRadius: "14px",
-    backgroundColor: THEME.cardBg,
-    border: `1px solid ${THEME.border}`,
-    transition: "all 0.2s ease",
-    cursor: "pointer",
-  },
-  avatar: {
-    width: "46px",
-    height: "46px",
-    borderRadius: "50%",
-    objectFit: "cover",
-    marginRight: "12px",
-    flexShrink: 0,
-    border: `2px solid ${THEME.border}`,
-  },
-  avatarPlaceholder: {
-    width: "46px",
-    height: "46px",
-    borderRadius: "50%",
-    marginRight: "12px",
-    flexShrink: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "18px",
-    fontWeight: "700",
-    color: THEME.text,
-    background: `linear-gradient(135deg, ${THEME.teal}, #0088cc)`,
-  },
-  userInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  userName: {
-    fontSize: "15px",
-    fontWeight: "600",
-    color: THEME.text,
-    marginBottom: "2px",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  userStatus: {
-    fontSize: "12px",
-    color: THEME.textSecondary,
-    display: "flex",
-    alignItems: "center",
-    gap: "5px",
-  },
-  onlineDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    display: "inline-block",
-    flexShrink: 0,
-  },
-  actions: {
-    display: "flex",
-    gap: "6px",
-    flexShrink: 0,
-  },
-  iconBtn: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "10px",
-    border: "none",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    fontSize: "16px",
-    transition: "all 0.2s ease",
-    backgroundColor: THEME.inputBg,
-    color: THEME.textSecondary,
-  },
-  tealBtn: {
-    padding: "8px 16px",
-    borderRadius: "10px",
-    border: "none",
-    backgroundColor: THEME.teal,
-    color: "#000",
-    fontWeight: "600",
-    fontSize: "13px",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    whiteSpace: "nowrap",
-  },
-  dangerBtn: {
-    padding: "8px 16px",
-    borderRadius: "10px",
-    border: "none",
-    backgroundColor: "rgba(248, 81, 73, 0.15)",
-    color: THEME.dangerRed,
-    fontWeight: "600",
-    fontSize: "13px",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    whiteSpace: "nowrap",
-  },
-  emptyState: {
-    textAlign: "center",
-    padding: "40px 20px",
-    color: THEME.textSecondary,
-  },
-  emptyIcon: {
-    fontSize: "48px",
-    marginBottom: "12px",
-  },
-  emptyText: {
-    fontSize: "15px",
-    fontWeight: "500",
-    marginBottom: "6px",
-    color: THEME.text,
-  },
-  emptySubtext: {
-    fontSize: "13px",
-    color: THEME.textSecondary,
-  },
-  statusMsg: {
-    padding: "10px 16px",
-    borderRadius: "10px",
-    fontSize: "13px",
-    textAlign: "center",
-    marginBottom: "12px",
-  },
-};
+function FriendAvatar({ photoURL, name }) {
+  return (
+    <span className="friends-avatar-wrap">
+      {photoURL ? (
+        <img className="friends-avatar" src={photoURL} alt={name} />
+      ) : (
+        <span className="friends-avatar friends-avatar-fallback">
+          {(name || "?").charAt(0).toUpperCase()}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function EmptyState({ icon, title, copy, action }) {
+  return (
+    <div className="friends-empty-state">
+      <span><UiIcon name={icon} size={31} /></span>
+      <h3>{title}</h3>
+      <p>{copy}</p>
+      {action}
+    </div>
+  );
+}
 
 export default function FriendsList({ onOpenChat, onStartCall }) {
   const { currentUser } = useAuth();
@@ -245,70 +54,66 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [presenceData, setPresenceData] = useState(new Map());
-  const [statusMessage, setStatusMessage] = useState(null);
-  const [statusType, setStatusType] = useState("success");
+  const [status, setStatus] = useState(null);
 
-  // Listen to friends list
   useEffect(() => {
-    if (!currentUser) return;
-    const unsub = getFriends(currentUser.uid, setFriends);
-    return unsub;
+    if (!currentUser) return undefined;
+    return getFriends(currentUser.uid, setFriends);
   }, [currentUser]);
 
-  // Listen to pending requests
   useEffect(() => {
-    if (!currentUser) return;
-    const unsub = getPendingRequests(currentUser.uid, setPendingRequests);
-    return unsub;
+    if (!currentUser) return undefined;
+    return getPendingRequests(currentUser.uid, setPendingRequests);
   }, [currentUser]);
 
-  // Listen to sent requests
   useEffect(() => {
-    if (!currentUser) return;
-    const unsub = getSentRequests(currentUser.uid, setSentRequests);
-    return unsub;
+    if (!currentUser) return undefined;
+    return getSentRequests(currentUser.uid, setSentRequests);
   }, [currentUser]);
 
-  // Watch presence for all friends
   useEffect(() => {
-    if (friends.length === 0) {
+    if (!friends.length) {
       setPresenceData(new Map());
-      return;
+      return undefined;
     }
-    const uids = friends.map((f) => f.uid);
-    const unsub = watchMultiplePresence(uids, setPresenceData);
-    return unsub;
+    return watchMultiplePresence(friends.map((friend) => friend.uid), setPresenceData);
   }, [friends]);
 
-  // Search users with debounce
   useEffect(() => {
     if (activeTab !== "discover" || searchQuery.trim().length < 2) {
       setSearchResults([]);
-      return;
+      setSearching(false);
+      return undefined;
     }
 
     setSearching(true);
-    const timeout = setTimeout(async () => {
-      const results = await searchUsers(searchQuery);
-      // Filter out current user
-      const filtered = results.filter((u) => u.id !== currentUser?.uid);
-      setSearchResults(filtered);
+    const timeout = window.setTimeout(async () => {
+      const results = await searchUsers(searchQuery.trim());
+      setSearchResults(results.filter((user) => user.id !== currentUser?.uid));
       setSearching(false);
     }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, currentUser?.uid, searchQuery]);
 
-    return () => clearTimeout(timeout);
-  }, [searchQuery, activeTab, currentUser]);
+  const sortedFriends = useMemo(
+    () =>
+      [...friends].sort(
+        (a, b) =>
+          Number(Boolean(presenceData.get(b.uid)?.isOnline)) -
+          Number(Boolean(presenceData.get(a.uid)?.isOnline))
+      ),
+    [friends, presenceData]
+  );
 
   const showStatus = useCallback((message, type = "success") => {
-    setStatusMessage(message);
-    setStatusType(type);
-    setTimeout(() => setStatusMessage(null), 3000);
+    setStatus({ message, type });
+    window.setTimeout(() => setStatus(null), 2800);
   }, []);
 
   const handleSendRequest = async (targetUser) => {
     try {
       await sendFriendRequest(currentUser, targetUser.id);
-      showStatus(`Friend request sent to ${targetUser.displayName}!`);
+      showStatus(`Friend request sent to ${targetUser.displayName}`);
     } catch (error) {
       showStatus(error.message, "error");
     }
@@ -321,7 +126,7 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
         displayName: request.fromName,
         photoURL: request.fromPhoto,
       });
-      showStatus(`You are now friends with ${request.fromName}!`);
+      showStatus(`${request.fromName} is now your friend`);
     } catch (error) {
       showStatus(error.message, "error");
     }
@@ -330,347 +135,186 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
   const handleRejectRequest = async (request) => {
     try {
       await rejectFriendRequest(request.id);
-      showStatus("Request rejected");
+      showStatus("Request declined");
     } catch (error) {
       showStatus(error.message, "error");
     }
   };
 
   const handleRemoveFriend = async (friend) => {
-    if (!confirm(`Remove ${friend.displayName} from friends?`)) return;
+    if (!window.confirm(`Remove ${friend.displayName} from friends?`)) return;
     try {
       await removeFriend(currentUser.uid, friend.uid);
-      showStatus(`Removed ${friend.displayName} from friends`);
+      showStatus(`${friend.displayName} removed`);
     } catch (error) {
       showStatus(error.message, "error");
     }
   };
 
-  const getPresence = (uid) => {
-    return presenceData.get(uid) || { isOnline: false, lastSeen: null };
-  };
-
-  const renderAvatar = (photoURL, name) => {
-    if (photoURL) {
-      return <img src={photoURL} alt={name} style={styles.avatar} />;
-    }
-    return (
-      <div style={styles.avatarPlaceholder}>
-        {(name || "?").charAt(0).toUpperCase()}
-      </div>
-    );
-  };
-
-  const renderFriendsTab = () => {
-    if (friends.length === 0) {
+  const renderFriends = () => {
+    if (!sortedFriends.length) {
       return (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}><UiIcon name="users" size={38} /></div>
-          <div style={styles.emptyText}>No friends yet</div>
-          <div style={styles.emptySubtext}>Discover people in the Discover tab</div>
-        </div>
+        <EmptyState
+          icon="users"
+          title="Your circle starts here"
+          copy="Discover people, send a request, then chat or call from one place."
+          action={
+            <button className="friends-empty-action" type="button" onClick={() => setActiveTab("discover")}>
+              <UiIcon name="search" size={16} /> Discover people
+            </button>
+          }
+        />
       );
     }
 
-    // Sort: online first
-    const sorted = [...friends].sort((a, b) => {
-      const aOnline = getPresence(a.uid).isOnline ? 1 : 0;
-      const bOnline = getPresence(b.uid).isOnline ? 1 : 0;
-      return bOnline - aOnline;
-    });
-
-    return sorted.map((friend) => {
-      const presence = getPresence(friend.uid);
+    return sortedFriends.map((friend) => {
+      const presence = presenceData.get(friend.uid) || { isOnline: false, lastSeen: null };
       return (
-        <div key={friend.uid} style={styles.card}>
-          <div style={{ position: "relative" }}>
-            {renderAvatar(friend.photoURL, friend.displayName)}
-            <span
-              style={{
-                ...styles.onlineDot,
-                backgroundColor: presence.isOnline ? THEME.onlineGreen : THEME.offlineGray,
-                position: "absolute",
-                bottom: "2px",
-                right: "14px",
-                border: `2px solid ${THEME.cardBg}`,
-                width: "10px",
-                height: "10px",
-              }}
-            />
+        <article className="friend-card" key={friend.uid}>
+          <FriendAvatar photoURL={friend.photoURL} name={friend.displayName} />
+          <span className={presence.isOnline ? "friend-presence is-online" : "friend-presence"} />
+          <div className="friend-copy">
+            <strong>{friend.displayName}</strong>
+            <small className={presence.isOnline ? "is-online" : ""}>
+              {presence.isOnline ? "Online now" : formatLastSeen(presence.lastSeen)}
+            </small>
           </div>
-          <div style={styles.userInfo}>
-            <div style={styles.userName}>{friend.displayName}</div>
-            <div style={styles.userStatus}>
-              {presence.isOnline ? (
-                <span style={{ color: THEME.onlineGreen }}>Online</span>
-              ) : (
-                <span>{formatLastSeen(presence.lastSeen)}</span>
-              )}
-            </div>
-          </div>
-          <div style={styles.actions}>
-            <button
-              style={styles.iconBtn}
-              title="Chat"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenChat && onOpenChat(friend);
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.teal;
-                e.currentTarget.style.color = "#000";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.inputBg;
-                e.currentTarget.style.color = THEME.textSecondary;
-              }}
-            >
-              <UiIcon name="chat" size={18} />
+          <div className="friend-actions">
+            <button type="button" onClick={() => onOpenChat?.(friend)} aria-label={`Chat with ${friend.displayName}`}>
+              <UiIcon name="chat" size={17} />
             </button>
-            <button
-              style={styles.iconBtn}
-              title="Audio Call"
-              onClick={(e) => {
-                e.stopPropagation();
-                onStartCall && onStartCall(friend, "audio");
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.teal;
-                e.currentTarget.style.color = "#000";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.inputBg;
-                e.currentTarget.style.color = THEME.textSecondary;
-              }}
-            >
-              <UiIcon name="phone" size={18} />
+            <button type="button" onClick={() => onStartCall?.(friend, "audio")} aria-label={`Audio call ${friend.displayName}`}>
+              <UiIcon name="phone" size={17} />
             </button>
-            <button
-              style={styles.iconBtn}
-              title="Video Call"
-              onClick={(e) => {
-                e.stopPropagation();
-                onStartCall && onStartCall(friend, "video");
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.teal;
-                e.currentTarget.style.color = "#000";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.inputBg;
-                e.currentTarget.style.color = THEME.textSecondary;
-              }}
-            >
-              <UiIcon name="video" size={18} />
+            <button type="button" onClick={() => onStartCall?.(friend, "video")} aria-label={`Video call ${friend.displayName}`}>
+              <UiIcon name="video" size={17} />
             </button>
-            <button
-              style={{ ...styles.iconBtn, fontSize: "14px" }}
-              title="Remove Friend"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRemoveFriend(friend);
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(248,81,73,0.15)";
-                e.currentTarget.style.color = THEME.dangerRed;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.inputBg;
-                e.currentTarget.style.color = THEME.textSecondary;
-              }}
-            >
-              <UiIcon name="trash" size={17} />
+            <button className="is-danger" type="button" onClick={() => handleRemoveFriend(friend)} aria-label={`Remove ${friend.displayName}`}>
+              <UiIcon name="trash" size={16} />
             </button>
           </div>
-        </div>
+        </article>
       );
     });
   };
 
-  const renderRequestsTab = () => {
-    if (pendingRequests.length === 0) {
+  const renderRequests = () => {
+    if (!pendingRequests.length) {
       return (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}><UiIcon name="inbox" size={38} /></div>
-          <div style={styles.emptyText}>No pending requests</div>
-          <div style={styles.emptySubtext}>When someone sends you a request, it will appear here</div>
-        </div>
+        <EmptyState
+          icon="inbox"
+          title="No pending requests"
+          copy="New connection requests will appear here."
+        />
       );
     }
 
-    return pendingRequests.map((req) => (
-      <div key={req.id} style={styles.card}>
-        {renderAvatar(req.fromPhoto, req.fromName)}
-        <div style={styles.userInfo}>
-          <div style={styles.userName}>{req.fromName}</div>
-          <div style={styles.userStatus}>Wants to be your friend</div>
+    return pendingRequests.map((request) => (
+      <article className="friend-card request-card" key={request.id}>
+        <FriendAvatar photoURL={request.fromPhoto} name={request.fromName} />
+        <div className="friend-copy">
+          <strong>{request.fromName}</strong>
+          <small>Wants to connect with you</small>
         </div>
-        <div style={styles.actions}>
-          <button
-            style={styles.tealBtn}
-            onClick={() => handleAcceptRequest(req)}
-            onMouseEnter={(e) => (e.target.style.backgroundColor = THEME.tealHover)}
-            onMouseLeave={(e) => (e.target.style.backgroundColor = THEME.teal)}
-          >
-            Accept
+        <div className="request-actions">
+          <button className="accept-button" type="button" onClick={() => handleAcceptRequest(request)}>
+            <UiIcon name="check" size={16} /> Accept
           </button>
-          <button
-            style={styles.dangerBtn}
-            onClick={() => handleRejectRequest(req)}
-            onMouseEnter={(e) => (e.target.style.backgroundColor = "rgba(248,81,73,0.25)")}
-            onMouseLeave={(e) => (e.target.style.backgroundColor = "rgba(248,81,73,0.15)")}
-          >
-            Reject
+          <button className="decline-button" type="button" onClick={() => handleRejectRequest(request)}>
+            Decline
           </button>
         </div>
-      </div>
+      </article>
     ));
   };
 
-  const renderDiscoverTab = () => {
-    const sentUids = sentRequests.map((r) => r.to);
-    const friendUids = friends.map((f) => f.uid);
+  const renderDiscover = () => {
+    const friendUids = new Set(friends.map((friend) => friend.uid));
+    const sentUids = new Set(sentRequests.map((request) => request.to));
 
     return (
       <>
-        <div style={styles.searchBox}>
+        <label className="friends-search">
+          <UiIcon name="search" size={18} />
           <input
-            style={styles.searchInput}
-            type="text"
-            placeholder="Search by name..."
+            type="search"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={(e) => (e.target.style.borderColor = THEME.teal)}
-            onBlur={(e) => (e.target.style.borderColor = THEME.border)}
+            placeholder="Search people by display name"
+            onChange={(event) => setSearchQuery(event.target.value)}
           />
-        </div>
-        <div style={{ padding: "12px" }}>
-          {searching && (
-            <div style={{ textAlign: "center", padding: "20px", color: THEME.textSecondary }}>
-              Searching...
-            </div>
-          )}
-          {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-            <div style={styles.emptyState}>
-              <div style={styles.emptyIcon}><UiIcon name="search" size={38} /></div>
-              <div style={styles.emptyText}>No users found</div>
-              <div style={styles.emptySubtext}>Try a different name</div>
-            </div>
-          )}
-          {!searching && searchQuery.trim().length < 2 && (
-            <div style={styles.emptyState}>
-              <div style={styles.emptyIcon}><UiIcon name="globe" size={38} /></div>
-              <div style={styles.emptyText}>Discover People</div>
-              <div style={styles.emptySubtext}>Type at least 2 characters to search</div>
-            </div>
-          )}
-          {searchResults.map((user) => {
-            const isFriendAlready = friendUids.includes(user.id);
-            const hasSentRequest = sentUids.includes(user.id);
-
-            return (
-              <div key={user.id} style={styles.card}>
-                {renderAvatar(user.photoURL, user.displayName)}
-                <div style={styles.userInfo}>
-                  <div style={styles.userName}>{user.displayName}</div>
-                  <div style={styles.userStatus}>{user.email}</div>
-                </div>
-                <div style={styles.actions}>
-                  {isFriendAlready ? (
-                    <span
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: "10px",
-                        backgroundColor: "rgba(0,191,166,0.1)",
-                        color: THEME.teal,
-                        fontSize: "13px",
-                        fontWeight: "600",
-                      }}
-                    >
-                      ✓ Friends
-                    </span>
-                  ) : hasSentRequest ? (
-                    <span
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: "10px",
-                        backgroundColor: THEME.inputBg,
-                        color: THEME.textSecondary,
-                        fontSize: "13px",
-                        fontWeight: "600",
-                      }}
-                    >
-                      Pending
-                    </span>
-                  ) : (
-                    <button
-                      style={styles.tealBtn}
-                      onClick={() => handleSendRequest(user)}
-                      onMouseEnter={(e) => (e.target.style.backgroundColor = THEME.tealHover)}
-                      onMouseLeave={(e) => (e.target.style.backgroundColor = THEME.teal)}
-                    >
-                      Add Friend
-                    </button>
-                  )}
-                </div>
+        </label>
+        {searching && <div className="friends-loading"><i /> Searching AuraCall…</div>}
+        {!searching && searchQuery.trim().length < 2 && (
+          <EmptyState
+            icon="globe"
+            title="Discover AuraCall people"
+            copy="Enter at least two characters to find someone."
+          />
+        )}
+        {!searching && searchQuery.trim().length >= 2 && !searchResults.length && (
+          <EmptyState icon="search" title="No people found" copy="Try another display name." />
+        )}
+        {!searching &&
+          searchResults.map((user) => (
+            <article className="friend-card discover-card" key={user.id}>
+              <FriendAvatar photoURL={user.photoURL} name={user.displayName} />
+              <div className="friend-copy">
+                <strong>{user.displayName || "AuraCall user"}</strong>
+                <small>{user.bio || "Available on AuraCall X"}</small>
               </div>
-            );
-          })}
-        </div>
+              {friendUids.has(user.id) ? (
+                <span className="friend-state is-friend"><UiIcon name="check" size={14} /> Friends</span>
+              ) : sentUids.has(user.id) ? (
+                <span className="friend-state">Request sent</span>
+              ) : (
+                <button className="add-friend-button" type="button" onClick={() => handleSendRequest(user)}>
+                  <UiIcon name="userPlus" size={16} /> Add
+                </button>
+              )}
+            </article>
+          ))}
       </>
     );
   };
 
   return (
-    <div style={styles.container}>
-      {/* Status message */}
-      {statusMessage && (
-        <div
-          style={{
-            ...styles.statusMsg,
-            backgroundColor:
-              statusType === "error" ? "rgba(248,81,73,0.15)" : "rgba(0,191,166,0.15)",
-            color: statusType === "error" ? THEME.dangerRed : THEME.teal,
-            margin: "12px",
-          }}
-        >
-          {statusMessage}
+    <div className="friends-hub">
+      {status && (
+        <div className={`friends-status ${status.type === "error" ? "is-error" : ""}`}>
+          {status.message}
         </div>
       )}
 
-      {/* Tabs */}
-      <div style={styles.tabs}>
-        {[
-          { key: "friends", label: "Friends", count: friends.length },
-          { key: "requests", label: "Requests", count: pendingRequests.length },
-          { key: "discover", label: "Discover", count: 0 },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            style={{
-              ...styles.tab,
-              ...(activeTab === tab.key ? styles.activeTab : {}),
-            }}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-            {tab.count > 0 && <span style={styles.badge}>{tab.count}</span>}
-            {activeTab === tab.key && <span style={styles.tabIndicator} />}
-          </button>
-        ))}
+      <div className="friends-tabs" role="tablist" aria-label="Friends sections">
+        {TABS.map((tab) => {
+          const count =
+            tab.key === "friends"
+              ? friends.length
+              : tab.key === "requests"
+                ? pendingRequests.length
+                : 0;
+          return (
+            <button
+              className={activeTab === tab.key ? "is-active" : ""}
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <UiIcon name={tab.icon} size={17} />
+              <span>{tab.label}</span>
+              {count > 0 && <b>{count}</b>}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Content */}
-      {activeTab === "discover" ? (
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-          {renderDiscoverTab()}
-        </div>
-      ) : (
-        <div style={styles.content}>
-          {activeTab === "friends" && renderFriendsTab()}
-          {activeTab === "requests" && renderRequestsTab()}
-        </div>
-      )}
+      <div className="friends-content">
+        {activeTab === "friends" && renderFriends()}
+        {activeTab === "requests" && renderRequests()}
+        {activeTab === "discover" && renderDiscover()}
+      </div>
     </div>
   );
 }

@@ -9,11 +9,23 @@ import {
   uploadProfilePhoto,
 } from "../lib/auth";
 import { useLanguage } from "../lib/i18n";
+import ProfilePhotoCropper from "./ProfilePhotoCropper";
+import UiIcon from "./UiIcon";
 
 export default function ProfileStudio({ embedded = false, onClose }) {
   const router = useRouter();
   const { currentUser, logout } = useAuth();
-  const { language, languages, setLanguage, autoTranslate, setAutoTranslate, t } = useLanguage();
+  const {
+    language,
+    languages,
+    setLanguage,
+    translationLanguage,
+    translationLanguages,
+    setTranslationLanguage,
+    autoTranslate,
+    setAutoTranslate,
+    t,
+  } = useLanguage();
   const [profile, setProfile] = useState(null);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
@@ -21,6 +33,7 @@ export default function ProfileStudio({ embedded = false, onClose }) {
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
   const [shareUrl, setShareUrl] = useState("");
+  const [cropFile, setCropFile] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -46,7 +59,11 @@ export default function ProfileStudio({ embedded = false, onClose }) {
       await Promise.all([
         updateUserDisplayName(currentUser, name.trim()),
         updateUserBio(currentUser.uid, bio.trim()),
-        updateUserPreferences(currentUser.uid, { language, autoTranslate }),
+        updateUserPreferences(currentUser.uid, {
+          language,
+          translationLanguage,
+          autoTranslate,
+        }),
       ]);
       setProfile((current) => ({ ...current, displayName: name.trim(), bio: bio.trim() }));
       showNotice("Profile updated");
@@ -60,20 +77,49 @@ export default function ProfileStudio({ embedded = false, onClose }) {
   const handlePhoto = async (event) => {
     const file = event.target.files?.[0];
     if (!file || !currentUser) return;
-    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
-      showNotice("Choose an image smaller than 5 MB");
+    event.target.value = "";
+    const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!acceptedTypes.includes(file.type) || file.size > 10 * 1024 * 1024) {
+      showNotice("Use JPG, PNG, or WebP smaller than 10 MB");
       return;
     }
+    let dimensions;
+    try {
+      dimensions = await new Promise((resolve, reject) => {
+        const image = new Image();
+        const url = URL.createObjectURL(file);
+        image.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("Could not read this image"));
+        };
+        image.src = url;
+      });
+    } catch (error) {
+      showNotice(error.message || "Could not read this image");
+      return;
+    }
+    if (dimensions.width < 256 || dimensions.height < 256) {
+      showNotice("Choose an image at least 256 × 256 px");
+      return;
+    }
+    setCropFile(file);
+  };
+
+  const handleCroppedPhoto = async (file) => {
     setUploading(true);
     try {
       const photoURL = await uploadProfilePhoto(currentUser, file);
       setProfile((current) => ({ ...current, photoURL }));
+      setCropFile(null);
       showNotice("Profile photo updated");
     } catch (error) {
       showNotice(error.message || "Could not upload photo");
     } finally {
       setUploading(false);
-      event.target.value = "";
     }
   };
 
@@ -117,7 +163,7 @@ export default function ProfileStudio({ embedded = false, onClose }) {
         <div className="profile-studio-heading-actions">
           {onClose && (
             <button className="icon-button" type="button" onClick={onClose} aria-label={t("close")}>
-              ×
+              <UiIcon name="close" size={19} />
             </button>
           )}
           {!embedded && (
@@ -153,6 +199,9 @@ export default function ProfileStudio({ embedded = false, onClose }) {
             accept="image/*"
             onChange={handlePhoto}
           />
+          <div className="profile-photo-help">
+            JPG, PNG, or WebP · max 10 MB · minimum 256 × 256 · cropped to 512 × 512
+          </div>
           <h2>{name || "AuraCall User"}</h2>
           <p>{bio || "Available on AuraCall X"}</p>
           <span className="profile-presence"><i /> {t("online")}</span>
@@ -216,6 +265,24 @@ export default function ProfileStudio({ embedded = false, onClose }) {
             </select>
           </div>
 
+          <div className="field-group">
+            <label htmlFor="translation-language">Message translation language</label>
+            <select
+              id="translation-language"
+              value={translationLanguage}
+              onChange={(event) => setTranslationLanguage(event.target.value)}
+            >
+              {translationLanguages.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.nativeLabel} · {item.label}
+                </option>
+              ))}
+            </select>
+            <small className="field-help">
+              Incoming messages are translated to this language. Source language is detected automatically.
+            </small>
+          </div>
+
           <label className="toggle-setting">
             <div>
               <strong>{t("autoTranslate")}</strong>
@@ -244,6 +311,13 @@ export default function ProfileStudio({ embedded = false, onClose }) {
           </div>
         </div>
       </div>
+      {cropFile && (
+        <ProfilePhotoCropper
+          file={cropFile}
+          onCancel={() => setCropFile(null)}
+          onComplete={handleCroppedPhoto}
+        />
+      )}
     </section>
   );
 }

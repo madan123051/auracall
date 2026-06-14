@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useAuth } from "../components/AuthProvider";
+import { getUserProfile, updateUserPreferences } from "./auth";
 
 export const LANGUAGES = [
   { code: "en", label: "English", nativeLabel: "English" },
@@ -6,6 +8,19 @@ export const LANGUAGES = [
   { code: "ja", label: "Japanese", nativeLabel: "日本語" },
   { code: "es", label: "Spanish", nativeLabel: "Español" },
   { code: "ar", label: "Arabic", nativeLabel: "العربية" },
+];
+
+export const TRANSLATION_LANGUAGES = [
+  ...LANGUAGES,
+  { code: "bn", label: "Bengali", nativeLabel: "বাংলা" },
+  { code: "pa", label: "Punjabi", nativeLabel: "ਪੰਜਾਬੀ" },
+  { code: "ur", label: "Urdu", nativeLabel: "اردو" },
+  { code: "fr", label: "French", nativeLabel: "Français" },
+  { code: "de", label: "German", nativeLabel: "Deutsch" },
+  { code: "pt", label: "Portuguese", nativeLabel: "Português" },
+  { code: "ru", label: "Russian", nativeLabel: "Русский" },
+  { code: "zh", label: "Chinese", nativeLabel: "中文" },
+  { code: "ko", label: "Korean", nativeLabel: "한국어" },
 ];
 
 const messages = {
@@ -195,39 +210,87 @@ function detectLanguage() {
 }
 
 export function LanguageProvider({ children }) {
+  const { currentUser } = useAuth();
   const [language, setLanguageState] = useState("en");
+  const [translationLanguage, setTranslationLanguageState] = useState("en");
   const [autoTranslate, setAutoTranslateState] = useState(true);
 
   useEffect(() => {
     const savedLanguage = window.localStorage.getItem("auracall-language");
+    const savedTranslationLanguage = window.localStorage.getItem("auracall-translation-language");
     const savedAutoTranslate = window.localStorage.getItem("auracall-auto-translate");
-    setLanguageState(savedLanguage || detectLanguage());
+    const detectedLanguage = savedLanguage || detectLanguage();
+    setLanguageState(detectedLanguage);
+    setTranslationLanguageState(savedTranslationLanguage || detectedLanguage);
     setAutoTranslateState(savedAutoTranslate !== "false");
   }, []);
 
   useEffect(() => {
+    if (!currentUser?.uid) return;
+    let cancelled = false;
+    getUserProfile(currentUser.uid).then((profile) => {
+      if (cancelled || !profile?.preferences) return;
+      const preferences = profile.preferences;
+      if (preferences.language) {
+        setLanguageState(preferences.language);
+        window.localStorage.setItem("auracall-language", preferences.language);
+      }
+      if (preferences.translationLanguage) {
+        setTranslationLanguageState(preferences.translationLanguage);
+        window.localStorage.setItem("auracall-translation-language", preferences.translationLanguage);
+      }
+      if (typeof preferences.autoTranslate === "boolean") {
+        setAutoTranslateState(preferences.autoTranslate);
+        window.localStorage.setItem("auracall-auto-translate", String(preferences.autoTranslate));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
     document.documentElement.lang = language;
-    document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
+    document.documentElement.dir = ["ar", "ur"].includes(language) ? "rtl" : "ltr";
   }, [language]);
+
+  const persistPreferences = (next) => {
+    if (!currentUser?.uid) return;
+    updateUserPreferences(currentUser.uid, {
+      language,
+      translationLanguage,
+      autoTranslate,
+      ...next,
+    }).catch((error) => console.warn("[Language] Could not sync preferences:", error));
+  };
 
   const value = useMemo(
     () => ({
       language,
+      translationLanguage,
       autoTranslate,
       languages: LANGUAGES,
+      translationLanguages: TRANSLATION_LANGUAGES,
       setLanguage(nextLanguage) {
         setLanguageState(nextLanguage);
         window.localStorage.setItem("auracall-language", nextLanguage);
+        persistPreferences({ language: nextLanguage });
+      },
+      setTranslationLanguage(nextLanguage) {
+        setTranslationLanguageState(nextLanguage);
+        window.localStorage.setItem("auracall-translation-language", nextLanguage);
+        persistPreferences({ translationLanguage: nextLanguage });
       },
       setAutoTranslate(enabled) {
         setAutoTranslateState(enabled);
         window.localStorage.setItem("auracall-auto-translate", String(enabled));
+        persistPreferences({ autoTranslate: enabled });
       },
       t(key) {
         return messages[language]?.[key] || messages.en[key] || key;
       },
     }),
-    [autoTranslate, language]
+    [autoTranslate, currentUser?.uid, language, translationLanguage]
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
