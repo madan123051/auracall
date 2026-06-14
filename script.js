@@ -146,6 +146,10 @@
   let outgoingTimeout = null;
   let connectingTimeout = null;
   let currentCallContact = null;
+  let userLanguage = localStorage.getItem('auracall-language') || 'en';
+  let encryptionMode = localStorage.getItem('auracall-encryption-mode') || 'e2e';
+  const languageNames = { en: 'English', hi: 'Hindi', ja: 'Japanese', ne: 'Nepali', zh: 'Chinese', es: 'Spanish', fr: 'French', ar: 'Arabic', ko: 'Korean' };
+  const contactLanguages = { 0: 'hi', 1: 'en', 2: 'hi', 3: 'en', 4: 'hi', 5: 'en', 6: 'hi', 7: 'en' };
 
   // ─── HELPERS ──────────────────────────────────────
   const $ = (sel) => document.querySelector(sel);
@@ -160,6 +164,50 @@
     if (half) html += '<span class="star">★</span>';
     for (let i = 0; i < empty; i++) html += '<span class="star empty">★</span>';
     return html;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>\"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[ch]));
+  }
+
+  function detectLanguage(text) {
+    if (/[\u0900-\u097F]/.test(text)) return 'hi';
+    if (/[\u3040-\u30ff]/.test(text)) return 'ja';
+    if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+    if (/[\u0600-\u06FF]/.test(text)) return 'ar';
+    if (/[\uAC00-\uD7AF]/.test(text)) return 'ko';
+    return 'en';
+  }
+
+  async function translateText(text, from, to) {
+    if (!text || from === to) return text;
+    const fallback = {
+      hi: `[Hindi translation] ${text}`,
+      en: `[English translation] ${text}`,
+      ja: `[Japanese translation] ${text}`,
+      ne: `[Nepali translation] ${text}`,
+      zh: `[Chinese translation] ${text}`,
+      es: `[Spanish translation] ${text}`,
+      fr: `[French translation] ${text}`,
+      ar: `[Arabic translation] ${text}`,
+      ko: `[Korean translation] ${text}`
+    };
+    try {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Translation request failed');
+      const data = await res.json();
+      return data?.responseData?.translatedText || fallback[to] || text;
+    } catch (_) {
+      return fallback[to] || text;
+    }
+  }
+
+  function updateSecurityStatus() {
+    const el = $('#chat-security-status');
+    if (el) el.textContent = `${encryptionMode === 'e2e' ? '🔐 E2E encrypted' : '💾 Backup encrypted'} · 🌐 ${languageNames[userLanguage]} display`;
+    const btn = $('#btn-encryption-mode');
+    if (btn) btn.textContent = encryptionMode === 'e2e' ? '🔐' : '💾';
   }
 
   function getLastMessage(contactId) {
@@ -304,7 +352,7 @@
           </div>
           <div class="convo-info">
             <div class="convo-name">${c.name}</div>
-            <div class="convo-preview">${lastMsg}</div>
+            <div class="convo-preview">🔐 ${escapeHtml(lastMsg)}</div>
           </div>
           <div class="convo-right">
             <span class="convo-time ${hasUnread ? 'unread' : ''}">${convo.lastTime}</span>
@@ -388,6 +436,8 @@
     }
 
     // Render messages
+    updateSecurityStatus();
+    translateConversationForDisplay(contactId);
     renderMessages(contactId);
 
     // Mark as read
@@ -397,6 +447,30 @@
     }
 
     showScreen('screen-chat-view', 'forward');
+  }
+
+
+  function translateConversationForDisplay(contactId) {
+    const convo = conversations[contactId];
+    if (!convo) return;
+    convo.messages.forEach(msg => {
+      if (msg.sent) return;
+      const source = msg.sourceLanguage || detectLanguage(msg.originalText || msg.text);
+      msg.sourceLanguage = source;
+      msg.originalText = msg.originalText || msg.text;
+      if (source === userLanguage) {
+        msg.displayText = msg.originalText;
+        msg.translated = false;
+        return;
+      }
+      msg.translated = true;
+      if (msg.translatedTo === userLanguage && msg.displayText) return;
+      translateText(msg.originalText, source, userLanguage).then(translated => {
+        msg.displayText = translated;
+        msg.translatedTo = userLanguage;
+        if (currentChatContactId === contactId) renderMessages(contactId);
+      });
+    });
   }
 
   function renderMessages(contactId) {
@@ -412,7 +486,9 @@
         : '';
       html += `
         <div class="message-bubble ${msg.sent ? 'sent' : 'received'}">
-          ${msg.text}
+          <div class="message-text">${escapeHtml(msg.displayText || msg.text)}</div>
+          ${msg.translated ? `<button class="translation-badge" title="Original: ${escapeHtml(msg.originalText || msg.text)}">🌐 Translated from ${languageNames[msg.sourceLanguage] || msg.sourceLanguage}</button>` : ''}
+          <div class="encryption-badge">${msg.encryptionMode === 'backup' ? '💾 Backup protected' : '🔐 End-to-end encrypted'}</div>
           <div class="message-meta">
             <span class="message-time">${msg.time}</span>
             ${readIcon}
@@ -427,6 +503,39 @@
     });
   }
 
+
+  function buildAiSuggestions() {
+    const convo = currentChatContactId === null ? null : conversations[currentChatContactId];
+    const last = convo?.messages?.[convo.messages.length - 1]?.text || '';
+    if (/price|discount|quote|order/i.test(last)) return ['Please share the best price.', 'Can you send the full catalog?', 'I can confirm by evening.'];
+    if (/call|video|free/i.test(last)) return ['Yes, I am available now.', 'Can we talk in 10 minutes?', 'Please start a video call.'];
+    return ['Sounds good!', 'Thanks, I will check and reply.', 'Can you share more details?'];
+  }
+
+  function showAiSuggestions() {
+    const panel = $('#ai-suggestions');
+    if (!panel) return;
+    panel.innerHTML = buildAiSuggestions().map(text => `<button class="ai-chip" data-ai-text="${escapeHtml(text)}">✨ ${escapeHtml(text)}</button>`).join('') + '<button class="ai-chip ai-assistant-chip" data-ai-text="@ai Summarize this chat and suggest next step">🤖 Ask AI</button>';
+    panel.classList.add('show');
+  }
+
+
+  function handleAiAssistant(promptText) {
+    if (currentChatContactId === null) return;
+    const convo = conversations[currentChatContactId];
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    convo.messages.push({ text: promptText, displayText: promptText, originalText: promptText, sourceLanguage: userLanguage, sent: true, time: timeStr, read: false, encryptionMode });
+    renderMessages(currentChatContactId);
+    $('#typing-indicator')?.classList.add('show');
+    setTimeout(() => {
+      $('#typing-indicator')?.classList.remove('show');
+      const answer = 'AI assistant: summarize the latest requirement, confirm next action, and keep the reply short and professional.';
+      const replyTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      convo.messages.push({ text: answer, displayText: answer, originalText: answer, sourceLanguage: 'en', sent: false, time: replyTime, read: true, encryptionMode: 'e2e' });
+      renderMessages(currentChatContactId);
+    }, 900);
+  }
+
   // ─── SEND MESSAGE ─────────────────────────────────
   function sendMessage() {
     const input = $('#chat-message-input');
@@ -436,11 +545,22 @@
     const convo = conversations[currentChatContactId];
     if (!convo) return;
 
+    if (text.toLowerCase().startsWith('@ai')) {
+      input.value = '';
+      handleAiAssistant(text);
+      return;
+    }
+
     const now = new Date();
     const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
-    convo.messages.push({ text, sent: true, time: timeStr, read: false });
+    const msg = { text, displayText: text, originalText: text, sourceLanguage: userLanguage, sent: true, time: timeStr, read: false, encryptionMode };
+    convo.messages.push(msg);
     input.value = '';
+    if (window.AuraEncryption?.supported) {
+      (encryptionMode === 'e2e' ? window.AuraEncryption.encryptE2E(text, currentChatContactId) : window.AuraEncryption.encryptBackup(text))
+        .then(payload => { msg.encryptedPayload = payload; renderMessages(currentChatContactId); });
+    }
 
     renderMessages(currentChatContactId);
 
@@ -454,8 +574,15 @@
     setTimeout(() => {
       $('#typing-indicator').classList.remove('show');
       const reply = autoReplies[Math.floor(Math.random() * autoReplies.length)];
+      const replyLang = contactLanguages[currentChatContactId] || 'en';
       const replyTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      convo.messages.push({ text: reply, sent: false, time: replyTime, read: true });
+      const incoming = { text: reply, displayText: reply, originalText: reply, sourceLanguage: replyLang, sent: false, time: replyTime, read: true, encryptionMode };
+      convo.messages.push(incoming);
+      if (replyLang !== userLanguage) {
+        translateText(reply, replyLang, userLanguage).then(translated => {
+          incoming.displayText = translated; incoming.translated = true; renderMessages(currentChatContactId);
+        });
+      }
       // Mark our messages as read
       convo.messages.forEach(m => { if (m.sent) m.read = true; });
       renderMessages(currentChatContactId);
@@ -707,8 +834,12 @@
       showScreen('screen-main');
     });
 
+    $('#ai-suggestions')?.addEventListener('click', (e) => { const chip = e.target.closest('.ai-chip'); if (!chip) return; const input = $('#chat-message-input'); input.value = chip.dataset.aiText || ''; input.focus(); $('#ai-suggestions').classList.remove('show'); });
+
     // Chat send
     $('#btn-send-message')?.addEventListener('click', sendMessage);
+    $('#btn-ai-assist')?.addEventListener('click', showAiSuggestions);
+    $('#btn-encryption-mode')?.addEventListener('click', () => { encryptionMode = encryptionMode === 'e2e' ? 'backup' : 'e2e'; localStorage.setItem('auracall-encryption-mode', encryptionMode); const sel = $('#encryption-select'); if (sel) sel.value = encryptionMode; updateSecurityStatus(); });
     $('#chat-message-input')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendMessage();
     });
@@ -724,6 +855,12 @@
         startOutgoingCall(currentChatContactId);
       }
     });
+
+    $('#language-select')?.addEventListener('change', (e) => { userLanguage = e.target.value; localStorage.setItem('auracall-language', userLanguage); updateSecurityStatus(); if (currentChatContactId !== null) renderMessages(currentChatContactId); });
+    $('#encryption-select')?.addEventListener('change', (e) => { encryptionMode = e.target.value; localStorage.setItem('auracall-encryption-mode', encryptionMode); updateSecurityStatus(); });
+    const langSelect = $('#language-select'); if (langSelect) langSelect.value = userLanguage;
+    const encSelect = $('#encryption-select'); if (encSelect) encSelect.value = encryptionMode;
+    updateSecurityStatus();
 
     // Incoming call buttons
     $('#btn-accept')?.addEventListener('click', () => {
