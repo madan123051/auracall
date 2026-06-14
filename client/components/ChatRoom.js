@@ -5,12 +5,15 @@ import {
   sendMessage,
   getMessages,
   markAsRead,
+  deleteMessage,
   setTyping,
   watchTyping,
 } from "../lib/chat";
 import { watchPresence, formatLastSeen } from "../lib/presence";
 import { useLanguage } from "../lib/i18n";
 import { getUserProfile } from "../lib/auth";
+import SwipeActionRow from "./SwipeActionRow";
+import UiIcon from "./UiIcon";
 
 const AI_REQUEST_TIMEOUT_MS = 12000;
 
@@ -36,75 +39,6 @@ async function requestAi(payload, signal) {
   return result;
 }
 
-function BackIcon() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m15 18-6-6 6-6" />
-    </svg>
-  );
-}
-
-function PhoneIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.33 1.84.56 2.8.69A2 2 0 0 1 22 16.92z" />
-    </svg>
-  );
-}
-
-function VideoIcon() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="6" width="14" height="12" rx="3" />
-      <path d="m16 10 5-3v10l-5-3" />
-    </svg>
-  );
-}
-
-function LockIcon({ size = 14 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="10" width="16" height="11" rx="3" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
-function GlobeIcon({ size = 15 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-    </svg>
-  );
-}
-
-function SparkIcon({ size = 15 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m12 3 1.3 4.2L17.5 9l-4.2 1.8L12 15l-1.3-4.2L6.5 9l4.2-1.8L12 3Z" />
-      <path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" />
-    </svg>
-  );
-}
-
-function SummaryIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 6h14M5 12h10M5 18h7" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m22 2-7 20-4-9-9-4Z" />
-      <path d="M22 2 11 13" />
-    </svg>
-  );
-}
-
 const THEME = {
   bg: "#070319",
   cardBg: "rgba(255,255,255,0.08)",
@@ -121,6 +55,7 @@ const THEME = {
 
 const styles = {
   container: {
+    position: "relative",
     display: "flex",
     flexDirection: "column",
     height: "100%",
@@ -405,6 +340,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
   const [aiLoading, setAiLoading] = useState("");
   const [translationPending, setTranslationPending] = useState("");
   const [aiNote, setAiNote] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const [peerProfile, setPeerProfile] = useState(null);
   const messagesEndRef = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -585,6 +521,17 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
     setMessageLimit((prev) => prev + 50);
   };
 
+  const handleDeleteMessage = async (message) => {
+    await deleteMessage(chatId, message.id, currentUser.uid);
+    setTranslations((current) => {
+      const next = { ...current };
+      delete next[message.id];
+      return next;
+    });
+    setActionNotice("Message deleted");
+    window.setTimeout(() => setActionNotice(""), 2200);
+  };
+
   const runAiAction = async (action) => {
     const recentMessages = messages
       .slice(-10)
@@ -683,10 +630,10 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
           style={styles.backBtn}
           onClick={onBack}
           aria-label="Back to conversations"
-          onMouseEnter={(e) => (e.target.style.backgroundColor = THEME.border)}
-          onMouseLeave={(e) => (e.target.style.backgroundColor = THEME.inputBg)}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = THEME.border)}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = THEME.inputBg)}
         >
-          <BackIcon />
+          <UiIcon name="back" size={19} strokeWidth={2} />
         </button>
         {renderAvatar(peerPhoto, peerName)}
         <div className="aura-chat-header-info" style={styles.headerInfo}>
@@ -725,7 +672,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               e.currentTarget.style.color = THEME.textSecondary;
             }}
           >
-            <PhoneIcon />
+            <UiIcon name="phone" size={18} />
           </button>
           <button
             className="aura-chat-call-button"
@@ -741,14 +688,14 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               e.currentTarget.style.color = THEME.textSecondary;
             }}
           >
-            <VideoIcon />
+            <UiIcon name="video" size={19} />
           </button>
         </div>
       </div>
 
       <div className="aura-chat-security" style={styles.securityStrip}>
-        <span><LockIcon /> Protected</span>
-        <span><GlobeIcon /> Auto → {targetLanguage}</span>
+        <span><UiIcon name="lock" size={14} strokeWidth={2} /> Protected</span>
+        <span><UiIcon name="globe" size={15} /> Auto → {targetLanguage}</span>
         <span className={aiLoading || translationPending ? "is-working" : ""}>
           <i />
           {aiLoading ? "AI working" : translationPending ? "Translating" : "AI ready"}
@@ -756,18 +703,18 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       </div>
       <div className="aura-chat-ai-rail" style={styles.aiRail}>
         <button style={styles.aiChip} onClick={() => runAiAction("smart_reply")} disabled={Boolean(aiLoading)}>
-          <SparkIcon /> {t("smartReply")}
+          <UiIcon name="spark" size={15} /> {t("smartReply")}
         </button>
         <button style={styles.aiChip} onClick={() => runAiAction("summarize")} disabled={Boolean(aiLoading)}>
-          <SummaryIcon /> {t("summarize")}
+          <UiIcon name="summary" size={15} /> {t("summarize")}
         </button>
         <button style={styles.aiChip} onClick={() => runAiAction("translate")} disabled={Boolean(aiLoading)}>
-          <GlobeIcon /> {t("translate")}
+          <UiIcon name="globe" size={15} /> {t("translate")}
         </button>
       </div>
       {aiNote && (
         <div className="aura-chat-ai-note" style={{ ...styles.securityStrip, marginTop: 8, color: THEME.textSecondary }}>
-          <span>✨ {aiNote}</span>
+          <span><UiIcon name="spark" size={13} /> {aiNote}</span>
           <button
             type="button"
             onClick={() => setAiNote("")}
@@ -777,6 +724,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
           </button>
         </div>
       )}
+      {actionNotice && <div className="aura-action-notice">{actionNotice}</div>}
 
       {/* Messages */}
       <div className="aura-chat-messages" style={styles.messagesArea} ref={messagesAreaRef}>
@@ -794,7 +742,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               color: THEME.textSecondary,
             }}
           >
-            <div style={{ fontSize: "48px", marginBottom: "12px" }}>💬</div>
+            <span className="aura-chat-empty-icon"><UiIcon name="chat" size={30} /></span>
             <div style={{ fontSize: "15px", fontWeight: "500", color: THEME.text }}>
               Start a conversation
             </div>
@@ -811,46 +759,64 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               {shouldShowDateDivider(msg, index) && (
                 <div style={styles.dateDivider}>{formatDateDivider(msg.timestamp)}</div>
               )}
-              <div
-                className={`aura-message-bubble ${isSent ? "is-sent" : "is-received"}`}
-                style={{
-                  ...styles.messageBubble,
-                  ...(isSent ? styles.sentBubble : styles.receivedBubble),
-                }}
-              >
-                <div>
-                  {!isSent && translations[msg.id] && !showOriginal[msg.id]
-                    ? translations[msg.id]
-                    : msg.text}
-                </div>
-                <div className="aura-message-meta">
-                  {!isSent && translations[msg.id] && (
-                    <button
-                      type="button"
-                      style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
-                      onClick={() =>
-                        setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }))
-                      }
-                    >
-                      <GlobeIcon size={11} /> {showOriginal[msg.id] ? t("translated") : t("original")}
-                    </button>
-                  )}
-                  <span className="aura-message-protected" title="Protected message"><LockIcon size={10} /></span>
+              {isSent ? (
+                <SwipeActionRow
+                  className="aura-message-row is-sent"
+                  confirmMessage="Delete this message for everyone?"
+                  deleteLabel="Delete"
+                  onDelete={() => handleDeleteMessage(msg)}
+                  onDeleteError={(error) => {
+                    setActionNotice(error.message || "Could not delete message");
+                    window.setTimeout(() => setActionNotice(""), 2600);
+                  }}
+                >
                   <div
-                    style={{
-                      ...styles.messageTime,
-                      ...(isSent ? styles.sentTime : styles.receivedTime),
-                    }}
+                    className="aura-message-bubble is-sent"
+                    style={{ ...styles.messageBubble, ...styles.sentBubble }}
                   >
-                    <span>{formatMessageTime(msg.timestamp)}</span>
-                    {isSent && (
-                      <span style={styles.readReceipt}>
-                        {msg.read ? "✓✓" : "✓"}
+                    <div>{msg.text}</div>
+                    <div className="aura-message-meta">
+                      <span className="aura-message-protected" title="Protected message">
+                        <UiIcon name="lock" size={10} strokeWidth={2} />
                       </span>
+                      <div style={{ ...styles.messageTime, ...styles.sentTime }}>
+                        <span>{formatMessageTime(msg.timestamp)}</span>
+                        <span style={styles.readReceipt}>{msg.read ? "✓✓" : "✓"}</span>
+                      </div>
+                    </div>
+                  </div>
+                </SwipeActionRow>
+              ) : (
+                <div
+                  className="aura-message-bubble is-received"
+                  style={{ ...styles.messageBubble, ...styles.receivedBubble }}
+                >
+                  <div>
+                    {translations[msg.id] && !showOriginal[msg.id]
+                      ? translations[msg.id]
+                      : msg.text}
+                  </div>
+                  <div className="aura-message-meta">
+                    {translations[msg.id] && (
+                      <button
+                        type="button"
+                        style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
+                        onClick={() =>
+                          setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }))
+                        }
+                      >
+                        <UiIcon name="globe" size={11} /> {showOriginal[msg.id] ? t("translated") : t("original")}
+                      </button>
                     )}
+                    <span className="aura-message-protected" title="Protected message">
+                      <UiIcon name="lock" size={10} strokeWidth={2} />
+                    </span>
+                    <div style={{ ...styles.messageTime, ...styles.receivedTime }}>
+                      <span>{formatMessageTime(msg.timestamp)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </React.Fragment>
           );
         })}
@@ -905,13 +871,13 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
           onClick={handleSend}
           disabled={!inputText.trim() || sending}
           onMouseEnter={(e) => {
-            if (inputText.trim()) e.target.style.backgroundColor = THEME.tealHover;
+            if (inputText.trim()) e.currentTarget.style.backgroundColor = THEME.tealHover;
           }}
           onMouseLeave={(e) => {
-            if (inputText.trim()) e.target.style.backgroundColor = THEME.teal;
+            if (inputText.trim()) e.currentTarget.style.backgroundColor = THEME.teal;
           }}
         >
-          <SendIcon />
+          <UiIcon name="send" size={19} strokeWidth={2} />
         </button>
       </div>
 

@@ -13,6 +13,8 @@ import {
 import { getFriends } from "../lib/friends";
 import { watchMultiplePresence } from "../lib/presence";
 import { useLanguage } from "../lib/i18n";
+import SwipeActionRow from "./SwipeActionRow";
+import UiIcon from "./UiIcon";
 
 const NAV_ITEMS = [
   { key: "chats", icon: "chat", labelKey: "chats" },
@@ -20,46 +22,6 @@ const NAV_ITEMS = [
   { key: "friends", icon: "users", labelKey: "friends" },
   { key: "profile", icon: "user", labelKey: "profile" },
 ];
-
-function Icon({ name, size = 20 }) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-    "aria-hidden": true,
-  };
-
-  if (name === "chat") {
-    return <svg {...common}><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>;
-  }
-  if (name === "phone") {
-    return <svg {...common}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.33 1.84.56 2.8.69A2 2 0 0 1 22 16.92z" /></svg>;
-  }
-  if (name === "users") {
-    return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
-  }
-  if (name === "user") {
-    return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>;
-  }
-  if (name === "menu") {
-    return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16" /></svg>;
-  }
-  if (name === "close") {
-    return <svg {...common}><path d="M6 6l12 12M18 6 6 18" /></svg>;
-  }
-  if (name === "share") {
-    return <svg {...common}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" /></svg>;
-  }
-  if (name === "panel") {
-    return <svg {...common}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M9 3v18" /></svg>;
-  }
-  return <svg {...common}><circle cx="12" cy="12" r="9" /></svg>;
-}
 
 function Avatar({ photoURL, name, size = 48 }) {
   if (photoURL) {
@@ -84,6 +46,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
+  const [deleteNotice, setDeleteNotice] = useState("");
 
   useEffect(() => {
     const saved = window.localStorage.getItem("auracall-sidebar-collapsed");
@@ -172,6 +135,12 @@ export default function ModernDashboard({ onStartVideoCall }) {
     };
   };
 
+  const handleDeleteCall = async (call) => {
+    await deleteCallRecord(currentUser.uid, call.id);
+    setDeleteNotice("Call removed");
+    window.setTimeout(() => setDeleteNotice(""), 2200);
+  };
+
   const formatChatTime = (timestamp) => {
     if (!timestamp) return "";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -198,7 +167,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
     <div className="modern-list">
       {!chats.length && (
         <div className="modern-empty-state">
-          <span className="empty-state-icon"><Icon name="chat" size={30} /></span>
+          <span className="empty-state-icon"><UiIcon name="chat" size={30} /></span>
           <h3>{t("noConversations")}</h3>
           <p>Add a friend or open a profile link to begin.</p>
         </div>
@@ -231,33 +200,44 @@ export default function ModernDashboard({ onStartVideoCall }) {
     <div className="modern-list">
       {!callHistory.length && (
         <div className="modern-empty-state">
-          <span className="empty-state-icon"><Icon name="phone" size={30} /></span>
+          <span className="empty-state-icon"><UiIcon name="phone" size={30} /></span>
           <h3>{t("noCalls")}</h3>
           <p>Audio and video calls will appear here.</p>
         </div>
       )}
       {callHistory.map((call) => (
-        <div className="conversation-card call-history-card" key={call.id}>
-          <Avatar photoURL={call.peerPhoto} name={call.peerName} />
-          <span className="conversation-copy">
-            <strong>{call.peerName}</strong>
-            <small className={call.status === "missed" ? "missed-call" : ""}>
-              {call.direction === "incoming" ? "Incoming" : "Outgoing"} · {call.type === "video" ? "Video" : "Audio"}
-              {call.duration > 0 ? ` · ${formatDuration(call.duration)}` : ""}
-            </small>
-          </span>
-          <span className="conversation-meta">
-            <time>{formatCallTime(call.startedAt)}</time>
-            <button
-              className="mini-action-button"
-              type="button"
-              aria-label="Delete call"
-              onClick={() => deleteCallRecord(currentUser.uid, call.id)}
-            >
-              ×
-            </button>
-          </span>
-        </div>
+        <SwipeActionRow
+          className="call-swipe-row"
+          key={call.id}
+          confirmMessage={`Delete the call with ${call.peerName || "this contact"}?`}
+          deleteLabel="Delete"
+          onDelete={() => handleDeleteCall(call)}
+          onDeleteError={(error) => {
+            setDeleteNotice(error.message || "Could not delete call");
+            window.setTimeout(() => setDeleteNotice(""), 2600);
+          }}
+        >
+          <div className="conversation-card call-history-card">
+            <Avatar photoURL={call.peerPhoto} name={call.peerName} />
+            <span className="conversation-copy">
+              <strong>{call.peerName}</strong>
+              <small className={call.status === "missed" ? "missed-call" : ""}>
+                <span className="call-detail">
+                  <UiIcon name={call.direction === "incoming" ? "incoming" : "outgoing"} size={13} />
+                  {call.direction === "incoming" ? "Incoming" : "Outgoing"}
+                </span>
+                <span className="call-detail">
+                  <UiIcon name={call.type === "video" ? "video" : "phone"} size={13} />
+                  {call.type === "video" ? "Video" : "Audio"}
+                </span>
+                {call.duration > 0 && <span>{formatDuration(call.duration)}</span>}
+              </small>
+            </span>
+            <span className="conversation-meta">
+              <time>{formatCallTime(call.startedAt)}</time>
+            </span>
+          </div>
+        </SwipeActionRow>
       ))}
     </div>
   );
@@ -285,7 +265,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
             <span>Connect intelligently</span>
           </div>
           <button className="sidebar-close-mobile" type="button" onClick={() => setMobileMenuOpen(false)} aria-label={t("close")}>
-            <Icon name="close" />
+            <UiIcon name="close" />
           </button>
         </div>
 
@@ -298,7 +278,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
               onClick={() => openTab(item.key)}
               title={t(item.labelKey)}
             >
-              <span className="nav-icon"><Icon name={item.icon} /></span>
+              <span className="nav-icon"><UiIcon name={item.icon} /></span>
               <span className="nav-copy">{t(item.labelKey)}</span>
               {item.key === "chats" && totalUnread > 0 && <b>{totalUnread}</b>}
             </button>
@@ -318,12 +298,12 @@ export default function ModernDashboard({ onStartVideoCall }) {
             <small>{currentUser.email || "Guest account"}</small>
           </span>
           <button className="mini-action-button" type="button" onClick={handleShare} aria-label={t("shareProfile")}>
-            <Icon name="share" size={17} />
+            <UiIcon name="share" size={17} />
           </button>
         </div>
 
         <button className="sidebar-collapse-button" type="button" onClick={toggleSidebar}>
-          <Icon name="panel" size={18} />
+          <UiIcon name="panel" size={18} />
           <span>{sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</span>
         </button>
       </aside>
@@ -332,7 +312,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
         <header className="modern-topbar">
           <div className="modern-topbar-title">
             <button className="mobile-menu-button" type="button" onClick={() => setMobileMenuOpen(true)} aria-label={t("menu")}>
-              <Icon name="menu" />
+              <UiIcon name="menu" />
             </button>
             <div>
               <span className="section-kicker">Aura workspace</span>
@@ -342,7 +322,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
           <div className="modern-topbar-actions">
             <span className="ai-status-pill"><i /> {t("aiReady")}</span>
             <button className="secondary-button share-topbar-button" type="button" onClick={handleShare}>
-              <Icon name="share" size={17} /> {t("shareProfile")}
+              <UiIcon name="share" size={17} /> {t("shareProfile")}
             </button>
             <button className="topbar-avatar-button" type="button" onClick={() => openTab("profile")}>
               <Avatar photoURL={currentUser.photoURL} name={currentUser.displayName} size={40} />
@@ -351,6 +331,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
         </header>
 
         {shareNotice && <div className="floating-notice">{shareNotice}</div>}
+        {deleteNotice && <div className="floating-notice">{deleteNotice}</div>}
 
         {activeTab !== "profile" && (
           <section className="modern-hero">
@@ -394,7 +375,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
             type="button"
             onClick={() => openTab(item.key)}
           >
-            <span><Icon name={item.icon} /></span>
+            <span><UiIcon name={item.icon} /></span>
             <small>{t(item.labelKey)}</small>
             {item.key === "chats" && totalUnread > 0 && <b>{totalUnread}</b>}
           </button>
