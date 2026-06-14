@@ -1629,6 +1629,99 @@ button {
   background: var(--aura-bg);
 }
 
+/* Mobile-first chat refinements */
+.aura-chat-security > span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.aura-chat-security > span:last-child i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--aura-cyan);
+  box-shadow: 0 0 10px rgba(88, 246, 223, 0.65);
+}
+
+.aura-chat-security > span:last-child.is-working i {
+  background: #b48cff;
+  box-shadow: 0 0 12px rgba(180, 140, 255, 0.8);
+  animation: auraChatStatusPulse 1.15s ease-in-out infinite;
+}
+
+.aura-chat-ai-rail {
+  scrollbar-width: none;
+}
+
+.aura-chat-ai-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.aura-chat-ai-rail button:disabled {
+  opacity: 0.48;
+  cursor: wait;
+}
+
+.aura-message-meta {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.aura-message-meta > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.aura-message-protected {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  opacity: 0.62;
+}
+
+.aura-message-meta > div {
+  margin-top: 0 !important;
+}
+
+.aura-message-bubble.is-sent .aura-message-meta {
+  color: rgba(5, 4, 19, 0.56);
+}
+
+.aura-message-bubble.is-sent .aura-message-protected {
+  color: rgba(5, 4, 19, 0.62);
+}
+
+.aura-chat-ai-note {
+  align-items: center;
+}
+
+.aura-chat-ai-note > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes auraChatStatusPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
 /* Collapsed desktop sidebar */
 .sidebar-is-collapsed {
   grid-template-columns: 88px minmax(0, 1fr);
@@ -2429,6 +2522,132 @@ button {
     font-size: 8px;
   }
 
+  .aura-chat-header {
+    min-height: 58px;
+    margin: max(7px, env(safe-area-inset-top, 0px)) 8px 0 !important;
+    padding: 8px 9px !important;
+    border-radius: 19px !important;
+  }
+
+  .aura-chat-back {
+    width: 34px !important;
+    height: 34px !important;
+    flex: 0 0 34px;
+    margin-right: 7px !important;
+    border-radius: 11px !important;
+  }
+
+  .aura-chat-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    flex: 0 0 36px;
+    margin-right: 8px !important;
+    font-size: 14px !important;
+  }
+
+  .aura-chat-header-name {
+    font-size: 14px !important;
+  }
+
+  .aura-chat-header-info > div:last-child {
+    font-size: 10px !important;
+  }
+
+  .aura-chat-header-actions {
+    gap: 5px !important;
+  }
+
+  .aura-chat-call-button {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 11px !important;
+  }
+
+  .aura-chat-security {
+    min-height: 38px;
+    margin: 7px 8px 0 !important;
+    padding: 7px 10px !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    border-radius: 14px !important;
+    font-size: 9px !important;
+  }
+
+  .aura-chat-security > span {
+    gap: 4px;
+  }
+
+  .aura-chat-security svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .aura-chat-ai-rail {
+    gap: 6px !important;
+    padding: 7px 8px 3px !important;
+    overflow-x: auto !important;
+  }
+
+  .aura-chat-ai-rail button {
+    min-height: 34px;
+    padding: 7px 10px !important;
+    font-size: 9.5px !important;
+    white-space: nowrap;
+  }
+
+  .aura-chat-messages {
+    padding: 12px 10px !important;
+    background-size: 24px 24px !important;
+  }
+
+  .aura-message-bubble {
+    max-width: 84% !important;
+    padding: 10px 12px !important;
+    border-radius: 17px !important;
+    font-size: 14px !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  .aura-message-bubble.is-sent {
+    border-bottom-right-radius: 5px !important;
+  }
+
+  .aura-message-bubble.is-received {
+    border-bottom-left-radius: 5px !important;
+  }
+
+  .aura-message-meta {
+    margin-top: 5px;
+  }
+
+  .aura-chat-input-area {
+    min-height: 58px;
+    margin: 0 8px max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    padding: 7px !important;
+    gap: 7px !important;
+    border-radius: 22px !important;
+  }
+
+  .aura-chat-input-area textarea {
+    min-width: 0;
+    min-height: 42px;
+    padding: 10px 13px !important;
+    border-radius: 17px !important;
+    font-size: 16px !important;
+  }
+
+  .aura-chat-input-area > button {
+    width: 42px !important;
+    height: 42px !important;
+    flex: 0 0 42px;
+  }
+
+  .aura-chat-ai-note {
+    min-height: 34px;
+    margin-top: 6px !important;
+    font-size: 9px !important;
+  }
+
   .profile-studio-heading {
     align-items: flex-start;
   }
@@ -2484,6 +2703,16 @@ button {
     width: 116px;
     height: 116px;
     border-radius: 34px;
+  }
+
+  .aura-chat-security {
+    gap: 6px !important;
+    padding-inline: 8px !important;
+    font-size: 8.5px !important;
+  }
+
+  .aura-chat-ai-rail button {
+    padding-inline: 9px !important;
   }
 }
 

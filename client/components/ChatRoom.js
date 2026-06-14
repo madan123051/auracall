@@ -10,6 +10,100 @@ import {
 } from "../lib/chat";
 import { watchPresence, formatLastSeen } from "../lib/presence";
 import { useLanguage } from "../lib/i18n";
+import { getUserProfile } from "../lib/auth";
+
+const AI_REQUEST_TIMEOUT_MS = 12000;
+
+function isOpaqueUserName(name, uid) {
+  const value = String(name || "").trim();
+  if (!value || value === uid) return true;
+  return value.length > 24 && !/\s/.test(value);
+}
+
+function getFriendlyName(name, uid) {
+  return isOpaqueUserName(name, uid) ? "Aura user" : String(name).trim();
+}
+
+async function requestAi(payload, signal) {
+  const response = await fetch("/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "AI request failed");
+  return result;
+}
+
+function BackIcon() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.33 1.84.56 2.8.69A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
+
+function VideoIcon() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="14" height="12" rx="3" />
+      <path d="m16 10 5-3v10l-5-3" />
+    </svg>
+  );
+}
+
+function LockIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="10" width="16" height="11" rx="3" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+function GlobeIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}
+
+function SparkIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m12 3 1.3 4.2L17.5 9l-4.2 1.8L12 15l-1.3-4.2L6.5 9l4.2-1.8L12 3Z" />
+      <path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" />
+    </svg>
+  );
+}
+
+function SummaryIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 6h14M5 12h10M5 18h7" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </svg>
+  );
+}
 
 const THEME = {
   bg: "#070319",
@@ -30,6 +124,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
+    minHeight: 0,
     background: "radial-gradient(circle at 10% 0%, rgba(32,255,213,0.18), transparent 32%), radial-gradient(circle at 90% 4%, rgba(255,79,184,0.16), transparent 28%), linear-gradient(180deg, #070319 0%, #11082F 100%)",
   },
   header: {
@@ -82,11 +177,16 @@ const styles = {
   },
   headerInfo: {
     flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
   },
   headerName: {
     fontSize: "15px",
     fontWeight: "600",
     color: THEME.text,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
   headerStatus: {
     fontSize: "12px",
@@ -98,6 +198,7 @@ const styles = {
   headerActions: {
     display: "flex",
     gap: "8px",
+    flexShrink: 0,
   },
   headerActionBtn: {
     width: "38px",
@@ -115,6 +216,7 @@ const styles = {
   },
   messagesArea: {
     flex: 1,
+    minHeight: 0,
     overflowY: "auto",
     padding: "18px 14px",
     backgroundImage: "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
@@ -191,7 +293,7 @@ const styles = {
   inputArea: {
     display: "flex",
     alignItems: "center",
-    margin: "0 12px 12px",
+    margin: "0 12px max(12px, env(safe-area-inset-bottom, 0px))",
     padding: "12px",
     borderRadius: "28px",
     background: "rgba(12,8,34,0.82)",
@@ -241,8 +343,8 @@ const styles = {
     background: "linear-gradient(135deg, rgba(32,255,213,0.14), rgba(139,92,255,0.14))",
     border: `1px solid ${THEME.border}`,
     color: THEME.text,
-    fontSize: "12px",
-    fontWeight: "800",
+    fontSize: "11px",
+    fontWeight: "750",
     display: "flex",
     justifyContent: "space-between",
     gap: "8px",
@@ -256,23 +358,25 @@ const styles = {
   },
   aiChip: {
     flexShrink: 0,
-    padding: "9px 12px",
+    padding: "8px 11px",
     borderRadius: "999px",
     border: `1px solid ${THEME.border}`,
     background: "rgba(255,255,255,0.10)",
     color: THEME.text,
-    fontSize: "12px",
-    fontWeight: "800",
+    fontSize: "11px",
+    fontWeight: "750",
     cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
   },
-  badgeRow: { display: "flex", gap: "6px", marginTop: "7px", flexWrap: "wrap" },
   msgBadge: {
-    padding: "4px 7px",
+    padding: "2px 0",
     borderRadius: "999px",
-    background: "rgba(32,255,213,0.12)",
-    color: THEME.text,
-    fontSize: "10px",
-    fontWeight: "800",
+    background: "transparent",
+    color: THEME.textSecondary,
+    fontSize: "9px",
+    fontWeight: "750",
   },
   loadMoreBtn: {
     alignSelf: "center",
@@ -299,14 +403,35 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
   const [translations, setTranslations] = useState({});
   const [showOriginal, setShowOriginal] = useState({});
   const [aiLoading, setAiLoading] = useState("");
+  const [translationPending, setTranslationPending] = useState("");
   const [aiNote, setAiNote] = useState("");
+  const [peerProfile, setPeerProfile] = useState(null);
   const messagesEndRef = useRef(null);
   const messagesAreaRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const prevMessageCountRef = useRef(0);
+  const attemptedTranslationsRef = useRef(new Set());
 
   const chatId = currentUser && peer ? getChatId(currentUser.uid, peer.uid) : null;
   const targetLanguage = languages.find((item) => item.code === language)?.label || "English";
+  const peerName = getFriendlyName(peerProfile?.displayName || peer?.displayName, peer?.uid);
+  const peerPhoto = peerProfile?.photoURL || peer?.photoURL || "";
+
+  useEffect(() => {
+    attemptedTranslationsRef.current = new Set();
+    setTranslations({});
+    setShowOriginal({});
+    setPeerProfile(null);
+
+    if (!peer?.uid) return;
+    let cancelled = false;
+    getUserProfile(peer.uid).then((profile) => {
+      if (!cancelled && profile) setPeerProfile(profile);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [peer?.uid]);
 
   // Listen to messages
   useEffect(() => {
@@ -352,24 +477,25 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       !latestIncoming ||
       latestIncoming.senderId === currentUser.uid ||
       !latestIncoming.text ||
-      translations[latestIncoming.id]
+      translations[latestIncoming.id] ||
+      attemptedTranslationsRef.current.has(latestIncoming.id)
     ) return;
 
+    attemptedTranslationsRef.current.add(latestIncoming.id);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
     let cancelled = false;
     const translateLatest = async () => {
-      setAiLoading("translate");
+      setTranslationPending(latestIncoming.id);
       try {
-        const response = await fetch("/api/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const result = await requestAi(
+          {
             action: "translate",
             text: latestIncoming.text,
             targetLanguage,
-          }),
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Translation failed");
+          },
+          controller.signal
+        );
         if (!cancelled && !result.fallback && result.text) {
           setTranslations((current) => ({ ...current, [latestIncoming.id]: result.text }));
         }
@@ -377,16 +503,31 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
           setAiNote("Add OPENAI_API_KEY to enable live AI translation.");
         }
       } catch (error) {
-        if (!cancelled) setAiNote(error.message || "Translation is temporarily unavailable.");
+        if (!cancelled) {
+          setAiNote(
+            error.name === "AbortError"
+              ? "Translation paused. Tap Translate to try again."
+              : error.message || "Translation is temporarily unavailable."
+          );
+        }
       } finally {
-        if (!cancelled) setAiLoading("");
+        window.clearTimeout(timeout);
+        if (!cancelled) setTranslationPending("");
       }
     };
     translateLatest();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [autoTranslate, currentUser, messages, targetLanguage, translations]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, []);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -447,7 +588,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
   const runAiAction = async (action) => {
     const recentMessages = messages
       .slice(-10)
-      .map((message) => `${message.senderId === currentUser.uid ? "Me" : peer.displayName}: ${message.text}`)
+      .map((message) => `${message.senderId === currentUser.uid ? "Me" : peerName}: ${message.text}`)
       .join("\n");
     const latestIncoming = [...messages]
       .reverse()
@@ -461,23 +602,23 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
 
     setAiLoading(action);
     setAiNote("");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const result = await requestAi(
+        {
           action,
           text: sourceText,
           targetLanguage,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "AI request failed");
+        },
+        controller.signal
+      );
 
       if (action === "smart_reply") {
         setInputText(result.text);
         if (result.fallback) setAiNote("Using local smart-reply fallback. Add OPENAI_API_KEY for full AI.");
       } else if (action === "translate" && latestIncoming) {
+        attemptedTranslationsRef.current.add(latestIncoming.id);
         if (result.fallback) {
           setAiNote("Add OPENAI_API_KEY to enable live AI translation.");
         } else {
@@ -487,8 +628,13 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
         setAiNote(result.text);
       }
     } catch (error) {
-      setAiNote(error.message || "AI is temporarily unavailable.");
+      setAiNote(
+        error.name === "AbortError"
+          ? "AI took too long to respond. Please try again."
+          : error.message || "AI is temporarily unavailable."
+      );
     } finally {
+      window.clearTimeout(timeout);
       setAiLoading("");
     }
   };
@@ -517,10 +663,10 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
 
   const renderAvatar = (photoURL, name) => {
     if (photoURL) {
-      return <img src={photoURL} alt={name} style={styles.headerAvatar} />;
+      return <img className="aura-chat-avatar" src={photoURL} alt={name} style={styles.headerAvatar} />;
     }
     return (
-      <div style={styles.headerAvatarPlaceholder}>
+      <div className="aura-chat-avatar" style={styles.headerAvatarPlaceholder}>
         {(name || "?").charAt(0).toUpperCase()}
       </div>
     );
@@ -529,20 +675,22 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
   if (!peer || !currentUser) return null;
 
   return (
-    <div style={styles.container}>
+    <div className="aura-chat-room" style={styles.container}>
       {/* Header */}
-      <div style={styles.header}>
+      <div className="aura-chat-header" style={styles.header}>
         <button
+          className="aura-chat-back"
           style={styles.backBtn}
           onClick={onBack}
+          aria-label="Back to conversations"
           onMouseEnter={(e) => (e.target.style.backgroundColor = THEME.border)}
           onMouseLeave={(e) => (e.target.style.backgroundColor = THEME.inputBg)}
         >
-          ←
+          <BackIcon />
         </button>
-        {renderAvatar(peer.photoURL, peer.displayName)}
-        <div style={styles.headerInfo}>
-          <div style={styles.headerName}>{peer.displayName}</div>
+        {renderAvatar(peerPhoto, peerName)}
+        <div className="aura-chat-header-info" style={styles.headerInfo}>
+          <div className="aura-chat-header-name" style={styles.headerName} title={peerName}>{peerName}</div>
           <div style={styles.headerStatus}>
             <span
               style={{
@@ -562,8 +710,9 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
             )}
           </div>
         </div>
-        <div style={styles.headerActions}>
+        <div className="aura-chat-header-actions" style={styles.headerActions}>
           <button
+            className="aura-chat-call-button"
             style={styles.headerActionBtn}
             title="Audio Call"
             onClick={() => onStartCall && onStartCall(peer, "audio")}
@@ -576,9 +725,10 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               e.currentTarget.style.color = THEME.textSecondary;
             }}
           >
-            📞
+            <PhoneIcon />
           </button>
           <button
+            className="aura-chat-call-button"
             style={styles.headerActionBtn}
             title="Video Call"
             onClick={() => onStartCall && onStartCall(peer, "video")}
@@ -591,29 +741,32 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               e.currentTarget.style.color = THEME.textSecondary;
             }}
           >
-            🎥
+            <VideoIcon />
           </button>
         </div>
       </div>
 
-      <div style={styles.securityStrip}>
-        <span>🔐 E2E encrypted</span>
-        <span>🌐 Auto → {targetLanguage}</span>
-        <span>{aiLoading ? "✨ AI working..." : "✨ AI ready"}</span>
+      <div className="aura-chat-security" style={styles.securityStrip}>
+        <span><LockIcon /> Protected</span>
+        <span><GlobeIcon /> Auto → {targetLanguage}</span>
+        <span className={aiLoading || translationPending ? "is-working" : ""}>
+          <i />
+          {aiLoading ? "AI working" : translationPending ? "Translating" : "AI ready"}
+        </span>
       </div>
-      <div style={styles.aiRail}>
+      <div className="aura-chat-ai-rail" style={styles.aiRail}>
         <button style={styles.aiChip} onClick={() => runAiAction("smart_reply")} disabled={Boolean(aiLoading)}>
-          ✨ {t("smartReply")}
+          <SparkIcon /> {t("smartReply")}
         </button>
         <button style={styles.aiChip} onClick={() => runAiAction("summarize")} disabled={Boolean(aiLoading)}>
-          🤖 {t("summarize")}
+          <SummaryIcon /> {t("summarize")}
         </button>
         <button style={styles.aiChip} onClick={() => runAiAction("translate")} disabled={Boolean(aiLoading)}>
-          🌐 {t("translate")}
+          <GlobeIcon /> {t("translate")}
         </button>
       </div>
       {aiNote && (
-        <div style={{ ...styles.securityStrip, marginTop: 8, color: THEME.textSecondary }}>
+        <div className="aura-chat-ai-note" style={{ ...styles.securityStrip, marginTop: 8, color: THEME.textSecondary }}>
           <span>✨ {aiNote}</span>
           <button
             type="button"
@@ -626,7 +779,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       )}
 
       {/* Messages */}
-      <div style={styles.messagesArea} ref={messagesAreaRef}>
+      <div className="aura-chat-messages" style={styles.messagesArea} ref={messagesAreaRef}>
         {messages.length >= messageLimit && (
           <button style={styles.loadMoreBtn} onClick={handleLoadMore}>
             Load older messages
@@ -646,7 +799,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               Start a conversation
             </div>
             <div style={{ fontSize: "13px", marginTop: "4px" }}>
-              Send a message to {peer.displayName}
+              Send a message to {peerName}
             </div>
           </div>
         )}
@@ -659,6 +812,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
                 <div style={styles.dateDivider}>{formatDateDivider(msg.timestamp)}</div>
               )}
               <div
+                className={`aura-message-bubble ${isSent ? "is-sent" : "is-received"}`}
                 style={{
                   ...styles.messageBubble,
                   ...(isSent ? styles.sentBubble : styles.receivedBubble),
@@ -669,8 +823,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
                     ? translations[msg.id]
                     : msg.text}
                 </div>
-                <div style={styles.badgeRow}>
-                  <span style={styles.msgBadge}>🔐 Protected</span>
+                <div className="aura-message-meta">
                   {!isSent && translations[msg.id] && (
                     <button
                       type="button"
@@ -679,22 +832,23 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
                         setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }))
                       }
                     >
-                      🌐 {showOriginal[msg.id] ? t("translated") : t("original")}
+                      <GlobeIcon size={11} /> {showOriginal[msg.id] ? t("translated") : t("original")}
                     </button>
                   )}
-                </div>
-                <div
-                  style={{
-                    ...styles.messageTime,
-                    ...(isSent ? styles.sentTime : styles.receivedTime),
-                  }}
-                >
-                  <span>{formatMessageTime(msg.timestamp)}</span>
-                  {isSent && (
-                    <span style={styles.readReceipt}>
-                      {msg.read ? "✓✓" : "✓"}
-                    </span>
-                  )}
+                  <span className="aura-message-protected" title="Protected message"><LockIcon size={10} /></span>
+                  <div
+                    style={{
+                      ...styles.messageTime,
+                      ...(isSent ? styles.sentTime : styles.receivedTime),
+                    }}
+                  >
+                    <span>{formatMessageTime(msg.timestamp)}</span>
+                    {isSent && (
+                      <span style={styles.readReceipt}>
+                        {msg.read ? "✓✓" : "✓"}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </React.Fragment>
@@ -732,7 +886,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       </div>
 
       {/* Input area */}
-      <div style={styles.inputArea}>
+      <div className="aura-chat-input-area" style={styles.inputArea}>
         <textarea
           style={styles.messageInput}
           placeholder={t("typeMessage")}
@@ -757,7 +911,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
             if (inputText.trim()) e.target.style.backgroundColor = THEME.teal;
           }}
         >
-          ➤
+          <SendIcon />
         </button>
       </div>
 
