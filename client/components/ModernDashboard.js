@@ -144,7 +144,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
   const handleChatClick = (chat) => {
     const otherUid = chat.participants?.find((participant) => participant !== currentUser.uid);
     const friend = friends.find((item) => item.uid === otherUid);
-    setActiveChatPeer(friend || { uid: otherUid, displayName: otherUid || "Aura user", photoURL: "" });
+    setActiveChatPeer(friend || { uid: otherUid, displayName: "Aura user", photoURL: "" });
   };
 
   const handleShare = async () => {
@@ -167,7 +167,7 @@ export default function ModernDashboard({ onStartVideoCall }) {
     const friend = friends.find((item) => item.uid === otherUid);
     return {
       uid: otherUid,
-      displayName: friend?.displayName || otherUid || "Aura user",
+      displayName: friend?.displayName || "Aura user",
       photoURL: friend?.photoURL || "",
     };
   };
