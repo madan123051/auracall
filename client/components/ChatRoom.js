@@ -9,6 +9,7 @@ import {
   watchTyping,
 } from "../lib/chat";
 import { watchPresence, formatLastSeen } from "../lib/presence";
+import { useLanguage } from "../lib/i18n";
 
 const THEME = {
   bg: "#070319",
@@ -288,18 +289,24 @@ const styles = {
 
 export default function ChatRoom({ peer, onBack, onStartCall }) {
   const { currentUser } = useAuth();
+  const { language, languages, autoTranslate, t } = useLanguage();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [peerPresence, setPeerPresence] = useState({ isOnline: false, lastSeen: null });
   const [messageLimit, setMessageLimit] = useState(50);
   const [sending, setSending] = useState(false);
+  const [translations, setTranslations] = useState({});
+  const [showOriginal, setShowOriginal] = useState({});
+  const [aiLoading, setAiLoading] = useState("");
+  const [aiNote, setAiNote] = useState("");
   const messagesEndRef = useRef(null);
   const messagesAreaRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const prevMessageCountRef = useRef(0);
 
   const chatId = currentUser && peer ? getChatId(currentUser.uid, peer.uid) : null;
+  const targetLanguage = languages.find((item) => item.code === language)?.label || "English";
 
   // Listen to messages
   useEffect(() => {
@@ -337,6 +344,49 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
     }
     prevMessageCountRef.current = messages.length;
   }, [messages]);
+
+  useEffect(() => {
+    if (!autoTranslate || !messages.length || !currentUser) return;
+    const latestIncoming = messages[messages.length - 1];
+    if (
+      !latestIncoming ||
+      latestIncoming.senderId === currentUser.uid ||
+      !latestIncoming.text ||
+      translations[latestIncoming.id]
+    ) return;
+
+    let cancelled = false;
+    const translateLatest = async () => {
+      setAiLoading("translate");
+      try {
+        const response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "translate",
+            text: latestIncoming.text,
+            targetLanguage,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Translation failed");
+        if (!cancelled && !result.fallback && result.text) {
+          setTranslations((current) => ({ ...current, [latestIncoming.id]: result.text }));
+        }
+        if (!cancelled && result.fallback) {
+          setAiNote("Add OPENAI_API_KEY to enable live AI translation.");
+        }
+      } catch (error) {
+        if (!cancelled) setAiNote(error.message || "Translation is temporarily unavailable.");
+      } finally {
+        if (!cancelled) setAiLoading("");
+      }
+    };
+    translateLatest();
+    return () => {
+      cancelled = true;
+    };
+  }, [autoTranslate, currentUser, messages, targetLanguage, translations]);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -392,6 +442,55 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
 
   const handleLoadMore = () => {
     setMessageLimit((prev) => prev + 50);
+  };
+
+  const runAiAction = async (action) => {
+    const recentMessages = messages
+      .slice(-10)
+      .map((message) => `${message.senderId === currentUser.uid ? "Me" : peer.displayName}: ${message.text}`)
+      .join("\n");
+    const latestIncoming = [...messages]
+      .reverse()
+      .find((message) => message.senderId !== currentUser.uid && message.text);
+    const sourceText = action === "translate" ? latestIncoming?.text : recentMessages;
+
+    if (!sourceText) {
+      setAiNote("There is not enough conversation context yet.");
+      return;
+    }
+
+    setAiLoading(action);
+    setAiNote("");
+    try {
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          text: sourceText,
+          targetLanguage,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "AI request failed");
+
+      if (action === "smart_reply") {
+        setInputText(result.text);
+        if (result.fallback) setAiNote("Using local smart-reply fallback. Add OPENAI_API_KEY for full AI.");
+      } else if (action === "translate" && latestIncoming) {
+        if (result.fallback) {
+          setAiNote("Add OPENAI_API_KEY to enable live AI translation.");
+        } else {
+          setTranslations((current) => ({ ...current, [latestIncoming.id]: result.text }));
+        }
+      } else {
+        setAiNote(result.text);
+      }
+    } catch (error) {
+      setAiNote(error.message || "AI is temporarily unavailable.");
+    } finally {
+      setAiLoading("");
+    }
   };
 
   const formatMessageTime = (date) => {
@@ -499,14 +598,32 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
 
       <div style={styles.securityStrip}>
         <span>🔐 E2E encrypted</span>
-        <span>🌐 English ⇄ Auto</span>
-        <span>💾 Backup ready</span>
+        <span>🌐 Auto → {targetLanguage}</span>
+        <span>{aiLoading ? "✨ AI working..." : "✨ AI ready"}</span>
       </div>
       <div style={styles.aiRail}>
-        {["✨ Smart reply", "🤖 Ask AI", "🌐 Translate", "🔐 Verify"].map((label) => (
-          <button key={label} style={styles.aiChip} onClick={() => setInputText(label.includes("AI") ? "@ai Summarize this chat" : "Sounds good, please share more details.")}>{label}</button>
-        ))}
+        <button style={styles.aiChip} onClick={() => runAiAction("smart_reply")} disabled={Boolean(aiLoading)}>
+          ✨ {t("smartReply")}
+        </button>
+        <button style={styles.aiChip} onClick={() => runAiAction("summarize")} disabled={Boolean(aiLoading)}>
+          🤖 {t("summarize")}
+        </button>
+        <button style={styles.aiChip} onClick={() => runAiAction("translate")} disabled={Boolean(aiLoading)}>
+          🌐 {t("translate")}
+        </button>
       </div>
+      {aiNote && (
+        <div style={{ ...styles.securityStrip, marginTop: 8, color: THEME.textSecondary }}>
+          <span>✨ {aiNote}</span>
+          <button
+            type="button"
+            onClick={() => setAiNote("")}
+            style={{ border: 0, background: "transparent", color: THEME.textSecondary, cursor: "pointer" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
       <div style={styles.messagesArea} ref={messagesAreaRef}>
@@ -547,10 +664,24 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
                   ...(isSent ? styles.sentBubble : styles.receivedBubble),
                 }}
               >
-                <div>{msg.text}</div>
+                <div>
+                  {!isSent && translations[msg.id] && !showOriginal[msg.id]
+                    ? translations[msg.id]
+                    : msg.text}
+                </div>
                 <div style={styles.badgeRow}>
                   <span style={styles.msgBadge}>🔐 Protected</span>
-                  {!isSent && <span style={styles.msgBadge}>🌐 Auto translated</span>}
+                  {!isSent && translations[msg.id] && (
+                    <button
+                      type="button"
+                      style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
+                      onClick={() =>
+                        setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }))
+                      }
+                    >
+                      🌐 {showOriginal[msg.id] ? t("translated") : t("original")}
+                    </button>
+                  )}
                 </div>
                 <div
                   style={{
@@ -604,7 +735,7 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
       <div style={styles.inputArea}>
         <textarea
           style={styles.messageInput}
-          placeholder="Type a message..."
+          placeholder={t("typeMessage")}
           value={inputText}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}

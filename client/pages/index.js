@@ -1,7 +1,8 @@
 import React from 'react';
 import { useAuth } from '../components/AuthProvider';
 import { SocketProvider, useSocket } from '../lib/socket';
-import Dashboard from '../components/Dashboard';
+import Dashboard from '../components/ModernDashboard';
+import LoginScreen from '../components/LoginScreen';
 import VideoCall from '../components/VideoCall';
 import IncomingCallOverlay from '../components/IncomingCallOverlay';
 import { warmUpAudio } from '../lib/sounds';
@@ -372,7 +373,7 @@ export default function Home() {
   }
 
   if (!currentUser) {
-    return <LoginPage />;
+    return <LoginScreen />;
   }
 
   return (

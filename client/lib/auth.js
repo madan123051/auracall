@@ -176,6 +176,25 @@ export async function updateUserBio(uid, newBio) {
 }
 
 /**
+ * Save user-level UI and translation preferences.
+ */
+export async function updateUserPreferences(uid, preferences) {
+  if (!uid) throw new Error("Missing uid");
+  const userRef = doc(db, "users", uid);
+  await setDoc(
+    userRef,
+    {
+      preferences: {
+        language: preferences.language || "en",
+        autoTranslate: preferences.autoTranslate !== false,
+      },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+/**
  * Upload profile photo to Firebase Storage and update user profile.
  */
 export async function uploadProfilePhoto(user, file) {
