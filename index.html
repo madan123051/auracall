@@ -150,6 +150,29 @@
             <span class="settings-label">Notifications</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
+          <div class="settings-item settings-select-item">
+            <span class="settings-icon si-blue">🌐</span>
+            <span class="settings-label">Message language</span>
+            <select id="language-select" class="settings-select">
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="ja">Japanese</option>
+              <option value="ne">Nepali</option>
+              <option value="zh">Chinese</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="ar">Arabic</option>
+              <option value="ko">Korean</option>
+            </select>
+          </div>
+          <div class="settings-item settings-select-item">
+            <span class="settings-icon si-purple">🔐</span>
+            <span class="settings-label">Chat encryption</span>
+            <select id="encryption-select" class="settings-select">
+              <option value="e2e">E2E Encryption</option>
+              <option value="backup">Backup Encryption</option>
+            </select>
+          </div>
           <button class="settings-item">
             <span class="settings-icon si-purple">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -242,6 +265,7 @@
         <div class="chat-header-text">
           <div id="chat-header-name"></div>
           <div id="chat-header-status"></div>
+          <div id="chat-security-status" class="security-status">🔐 E2E encrypted · 🌐 Auto-translate on</div>
         </div>
       </div>
       <div class="chat-header-actions">
@@ -253,6 +277,7 @@
         </button>
       </div>
     </div>
+    <div id="ai-suggestions" class="ai-suggestions" aria-live="polite"></div>
     <div id="messages-area" class="messages-area"></div>
     <div id="typing-indicator" class="typing-indicator">
       <div id="typing-avatar" class="typing-avatar"></div>
@@ -260,6 +285,8 @@
     </div>
     <div class="chat-input-area">
       <div class="chat-input-wrapper">
+        <button id="btn-ai-assist" class="emoji-btn icon-btn ai-assist-btn" title="AI smart replies">✨</button>
+        <button id="btn-encryption-mode" class="emoji-btn icon-btn encryption-mode-btn" title="Switch encryption mode">🔐</button>
         <button class="emoji-btn icon-btn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
         </button>
@@ -405,6 +432,7 @@
 
 </div>
 
+<script src="encryption.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
