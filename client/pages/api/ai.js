@@ -25,12 +25,12 @@ function fallbackResult(action, text) {
   return text;
 }
 
-function buildPrompt(action, text, targetLanguage) {
+function buildPrompt(action, text, targetLanguage, sourceLanguage) {
   if (action === "translate") {
     return {
       instructions:
-        "Translate the user's text into the requested target language. Return only the translation. Preserve names, links, numbers, and the original tone.",
-      input: `Target language: ${targetLanguage || "English"}\n\nText:\n${text}`,
+        "Detect the source language when it is not supplied, then translate the user's text into the requested target language. Return only the translation. Preserve names, links, numbers, emoji, formatting, and the original tone. If the text is already in the target language, return it unchanged.",
+      input: `Source language: ${sourceLanguage || "Auto detect"}\nTarget language: ${targetLanguage || "English"}\n\nText:\n${text}`,
     };
   }
 
@@ -55,7 +55,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { action = "smart_reply", text = "", targetLanguage = "English" } = req.body || {};
+  const {
+    action = "smart_reply",
+    text = "",
+    targetLanguage = "English",
+    sourceLanguage = "Auto detect",
+  } = req.body || {};
   const safeText = String(text).trim().slice(0, MAX_TEXT_LENGTH);
 
   if (!safeText) return res.status(400).json({ error: "Text is required" });
@@ -67,7 +72,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const prompt = buildPrompt(action, safeText, targetLanguage);
+  const prompt = buildPrompt(action, safeText, targetLanguage, sourceLanguage);
 
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {

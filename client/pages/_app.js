@@ -15,11 +15,11 @@ export default function App({ Component, pageProps }) {
         <meta name="theme-color" content="#060816" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </Head>
-      <LanguageProvider>
-        <AuthProvider>
+      <AuthProvider>
+        <LanguageProvider>
           <Component {...pageProps} />
-        </AuthProvider>
-      </LanguageProvider>
+        </LanguageProvider>
+      </AuthProvider>
     </>
   );
 }

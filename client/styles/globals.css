@@ -1383,6 +1383,79 @@ button {
   margin-top: 17px;
 }
 
+.translation-quick-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.translation-quick-control label,
+.translation-quick-control button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  color: var(--aura-text);
+  background: rgba(8, 12, 31, 0.48);
+}
+
+.translation-quick-control label {
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.translation-quick-control label > span {
+  color: var(--aura-muted);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.translation-quick-control select {
+  min-width: 130px;
+  border: 0;
+  outline: none;
+  color: var(--aura-text);
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.translation-quick-control select option {
+  color: #fff;
+  background: #11152d;
+}
+
+.translation-quick-control button {
+  padding: 0 11px;
+  color: var(--aura-muted);
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.translation-quick-control button i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #646d8d;
+}
+
+.translation-quick-control button.is-active {
+  color: var(--aura-cyan);
+  border-color: rgba(88, 246, 223, 0.2);
+  background: rgba(88, 246, 223, 0.08);
+}
+
+.translation-quick-control button.is-active i {
+  background: var(--aura-cyan);
+  box-shadow: 0 0 10px rgba(88, 246, 223, 0.62);
+}
+
 .modern-hero-pills span,
 .public-profile-meta span {
   padding: 7px 10px;
@@ -1631,6 +1704,336 @@ button {
   font-size: 12px;
 }
 
+/* Friends hub */
+.friends-hub {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--aura-text);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(88, 246, 223, 0.07), transparent 21rem),
+    rgba(7, 10, 25, 0.2);
+}
+
+.friends-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  padding: 10px;
+  border-bottom: 1px solid var(--aura-line);
+  background: rgba(9, 13, 30, 0.56);
+}
+
+.friends-tabs button {
+  position: relative;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  color: var(--aura-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.friends-tabs button.is-active {
+  color: #07111d;
+  border-color: rgba(88, 246, 223, 0.24);
+  background: linear-gradient(135deg, var(--aura-cyan), #80a9ff);
+  box-shadow: 0 12px 28px rgba(88, 246, 223, 0.12);
+}
+
+.friends-tabs b {
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #fff;
+  background: #ff4f8b;
+  font-size: 8px;
+}
+
+.friends-content {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.friends-status {
+  margin: 10px 10px 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(88, 246, 223, 0.2);
+  border-radius: 12px;
+  color: var(--aura-cyan);
+  background: rgba(88, 246, 223, 0.07);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.friends-status.is-error {
+  color: #ff829c;
+  border-color: rgba(255, 79, 139, 0.2);
+  background: rgba(255, 79, 139, 0.07);
+}
+
+.friend-card {
+  position: relative;
+  min-width: 0;
+  min-height: 74px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--aura-line);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  transition: 150ms ease;
+}
+
+.friend-card:hover {
+  border-color: rgba(88, 246, 223, 0.19);
+  background: linear-gradient(145deg, rgba(88, 246, 223, 0.07), rgba(255, 255, 255, 0.025));
+}
+
+.friends-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.friends-avatar {
+  width: 48px;
+  height: 48px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  object-fit: cover;
+}
+
+.friends-avatar-fallback {
+  color: #07111d;
+  font-size: 17px;
+  font-weight: 950;
+  background: linear-gradient(145deg, var(--aura-cyan), var(--aura-blue));
+}
+
+.friend-presence {
+  position: absolute;
+  bottom: 13px;
+  left: 49px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #11152c;
+  border-radius: 50%;
+  background: #606985;
+}
+
+.friend-presence.is-online {
+  background: var(--aura-cyan);
+  box-shadow: 0 0 9px rgba(88, 246, 223, 0.7);
+}
+
+.friend-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.friend-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.friend-copy small {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--aura-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.friend-copy small.is-online {
+  color: var(--aura-cyan);
+}
+
+.friend-actions,
+.request-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.friend-actions button {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--aura-line);
+  border-radius: 11px;
+  color: var(--aura-muted);
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+}
+
+.friend-actions button:hover {
+  color: #07111d;
+  border-color: transparent;
+  background: var(--aura-cyan);
+}
+
+.friend-actions button.is-danger:hover {
+  color: #fff;
+  background: #e23a61;
+}
+
+.accept-button,
+.decline-button,
+.add-friend-button,
+.friends-empty-action {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 11px;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.accept-button,
+.add-friend-button,
+.friends-empty-action {
+  border: 0;
+  color: #07111d;
+  background: linear-gradient(135deg, var(--aura-cyan), #80a9ff);
+}
+
+.decline-button {
+  border: 1px solid rgba(255, 79, 139, 0.18);
+  color: #ff829c;
+  background: rgba(255, 79, 139, 0.06);
+}
+
+.friend-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: var(--aura-muted);
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.friend-state.is-friend {
+  color: var(--aura-cyan);
+  background: rgba(88, 246, 223, 0.07);
+}
+
+.friends-search {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--aura-line);
+  border-radius: 15px;
+  color: var(--aura-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.friends-search:focus-within {
+  color: var(--aura-cyan);
+  border-color: rgba(88, 246, 223, 0.4);
+  box-shadow: 0 0 0 3px rgba(88, 246, 223, 0.06);
+}
+
+.friends-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  color: var(--aura-text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+}
+
+.friends-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px;
+  color: var(--aura-muted);
+  font-size: 11px;
+}
+
+.friends-loading i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--aura-cyan);
+  animation: auraChatStatusPulse 1s infinite;
+}
+
+.friends-empty-state {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  text-align: center;
+}
+
+.friends-empty-state > span {
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(88, 246, 223, 0.16);
+  border-radius: 21px;
+  color: var(--aura-cyan);
+  background: linear-gradient(145deg, rgba(88, 246, 223, 0.09), rgba(125, 167, 255, 0.06));
+}
+
+.friends-empty-state h3 {
+  margin-top: 16px;
+  font-size: 17px;
+}
+
+.friends-empty-state p {
+  max-width: 320px;
+  margin-top: 7px;
+  color: var(--aura-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.friends-empty-action {
+  margin-top: 17px;
+}
+
 .modern-mobile-nav,
 .mobile-menu-button,
 .sidebar-close-mobile,
@@ -1800,6 +2203,81 @@ button {
   background: #b48cff;
   box-shadow: 0 0 12px rgba(180, 140, 255, 0.8);
   animation: auraChatStatusPulse 1.15s ease-in-out infinite;
+}
+
+.aura-chat-translation-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 0;
+}
+
+.aura-chat-translation-controls label,
+.aura-chat-translation-controls > button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--aura-line);
+  border-radius: 12px;
+  color: var(--aura-text);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.aura-chat-translation-controls label {
+  min-width: 0;
+  flex: 1;
+  padding: 0 10px;
+}
+
+.aura-chat-translation-controls label > span {
+  color: var(--aura-muted);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.aura-chat-translation-controls select {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  color: var(--aura-text);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.aura-chat-translation-controls select option {
+  color: #fff;
+  background: #11152d;
+}
+
+.aura-chat-translation-controls > button {
+  flex: 0 0 auto;
+  padding: 0 11px;
+  color: var(--aura-muted);
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.aura-chat-translation-controls > button i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #66708e;
+}
+
+.aura-chat-translation-controls > button.is-active {
+  color: var(--aura-cyan);
+  border-color: rgba(88, 246, 223, 0.2);
+  background: rgba(88, 246, 223, 0.08);
+}
+
+.aura-chat-translation-controls > button.is-active i {
+  background: var(--aura-cyan);
+  box-shadow: 0 0 10px rgba(88, 246, 223, 0.65);
 }
 
 .aura-chat-ai-rail {
@@ -2054,6 +2532,16 @@ button {
   backdrop-filter: blur(10px);
 }
 
+.profile-photo-help {
+  position: relative;
+  z-index: 1;
+  max-width: 290px;
+  margin-top: 10px;
+  color: var(--aura-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .profile-preview-card h2 {
   position: relative;
   margin-top: 22px;
@@ -2167,6 +2655,14 @@ button {
   font-size: 9px;
 }
 
+.field-help {
+  display: block;
+  margin-top: 7px;
+  color: var(--aura-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .field-group select option {
   color: #fff;
   background: #11152d;
@@ -2253,6 +2749,128 @@ button {
   color: #ff829c;
   font-size: 11px;
   font-weight: 800;
+}
+
+/* Profile photo cropper */
+.photo-crop-overlay {
+  position: fixed;
+  z-index: 180;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 4, 13, 0.8);
+  backdrop-filter: blur(18px);
+}
+
+.photo-crop-card {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 36px);
+  padding: 22px;
+  overflow-y: auto;
+  border: 1px solid var(--aura-line);
+  border-radius: 25px;
+  color: var(--aura-text);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(158, 102, 255, 0.17), transparent 45%),
+    rgba(12, 16, 37, 0.97);
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.55);
+}
+
+.photo-crop-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.photo-crop-heading h2 {
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.photo-crop-heading p {
+  margin-top: 5px;
+  color: var(--aura-muted);
+  font-size: 10px;
+}
+
+.photo-crop-preview {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  margin: 20px auto;
+  overflow: hidden;
+  border: 1px solid rgba(88, 246, 223, 0.24);
+  border-radius: 50%;
+  background: #080b19;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+
+.photo-crop-preview img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.photo-crop-guide {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(255, 255, 255, 0.62);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.photo-crop-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.photo-crop-controls label {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.photo-crop-controls span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd2ee;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.photo-crop-controls input {
+  width: 100%;
+  accent-color: var(--aura-cyan);
+}
+
+.photo-crop-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--aura-muted);
+  font-size: 9px;
+}
+
+.photo-crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.photo-crop-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 /* Public profile */
@@ -2572,6 +3190,24 @@ button {
     font-size: 11px;
   }
 
+  .translation-quick-control {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .translation-quick-control label {
+    flex: 1;
+  }
+
+  .translation-quick-control label > span {
+    display: none;
+  }
+
+  .translation-quick-control select {
+    width: 100%;
+    min-width: 0;
+  }
+
   .modern-hero-stats {
     gap: 6px;
   }
@@ -2615,6 +3251,73 @@ button {
     min-height: 67px;
     padding: 9px 8px;
     border-radius: 15px;
+  }
+
+  .friends-tabs {
+    gap: 5px;
+    padding: 7px;
+  }
+
+  .friends-tabs button {
+    min-height: 44px;
+    gap: 5px;
+    padding: 0 7px;
+    border-radius: 12px;
+    font-size: 9.5px;
+  }
+
+  .friends-content {
+    gap: 7px;
+    padding: 8px;
+  }
+
+  .friend-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 9px 10px;
+    padding: 10px;
+    border-radius: 15px;
+  }
+
+  .friend-presence {
+    bottom: auto;
+    top: 47px;
+    left: 47px;
+  }
+
+  .friend-actions,
+  .request-actions,
+  .discover-card > .add-friend-button,
+  .discover-card > .friend-state {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .friend-actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .friend-actions button {
+    width: 100%;
+    height: 36px;
+  }
+
+  .request-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .discover-card > .add-friend-button {
+    width: 100%;
+  }
+
+  .friend-state {
+    justify-content: center;
+  }
+
+  .friends-empty-state {
+    min-height: 230px;
+    padding: 24px 18px;
   }
 
   .call-history-card .conversation-copy small {
@@ -2764,6 +3467,29 @@ button {
     font-size: 9px !important;
   }
 
+  .aura-chat-translation-controls {
+    gap: 6px;
+    padding: 7px 8px 0;
+  }
+
+  .aura-chat-translation-controls label,
+  .aura-chat-translation-controls > button {
+    min-height: 34px;
+  }
+
+  .aura-chat-translation-controls label > span {
+    display: none;
+  }
+
+  .aura-chat-translation-controls select {
+    font-size: 9px;
+  }
+
+  .aura-chat-translation-controls > button {
+    padding-inline: 9px;
+    font-size: 8.5px;
+  }
+
   .aura-chat-security > span {
     gap: 4px;
   }
@@ -2870,6 +3596,15 @@ button {
   .profile-share-actions {
     grid-template-columns: 1fr;
   }
+
+  .photo-crop-card {
+    padding: 17px;
+    border-radius: 21px;
+  }
+
+  .photo-crop-controls label {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 420px) {
@@ -2908,6 +3643,23 @@ button {
 
   .aura-chat-ai-rail button {
     padding-inline: 9px !important;
+  }
+
+  .translation-quick-control {
+    flex-wrap: wrap;
+  }
+
+  .translation-quick-control label {
+    flex-basis: calc(100% - 92px);
+  }
+
+  .friends-tabs button svg {
+    display: none;
+  }
+
+  .photo-crop-meta {
+    flex-direction: column;
+    gap: 4px;
   }
 }
 
