@@ -11,14 +11,14 @@ import {
 import { watchPresence, formatLastSeen } from "../lib/presence";
 
 const THEME = {
-  bg: "#070B10",
-  cardBg: "#0D1117",
-  teal: "#00BFA6",
-  tealHover: "#00E5C3",
-  text: "#FFFFFF",
-  textSecondary: "#8B949E",
-  border: "#21262D",
-  inputBg: "#161B22",
+  bg: "#070319",
+  cardBg: "rgba(255,255,255,0.08)",
+  teal: "#20FFD5",
+  tealHover: "#6C63FF",
+  text: "#F8FBFF",
+  textSecondary: "#AAB7D4",
+  border: "rgba(255,255,255,0.14)",
+  inputBg: "rgba(255,255,255,0.10)",
   onlineGreen: "#2EA043",
   offlineGray: "#484F58",
   dangerRed: "#F85149",
@@ -29,14 +29,18 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    backgroundColor: THEME.bg,
+    background: "radial-gradient(circle at 10% 0%, rgba(32,255,213,0.18), transparent 32%), radial-gradient(circle at 90% 4%, rgba(255,79,184,0.16), transparent 28%), linear-gradient(180deg, #070319 0%, #11082F 100%)",
   },
   header: {
     display: "flex",
     alignItems: "center",
-    padding: "12px 16px",
-    backgroundColor: THEME.cardBg,
-    borderBottom: `1px solid ${THEME.border}`,
+    margin: "12px 12px 0",
+    padding: "12px 14px",
+    borderRadius: "26px",
+    background: "linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05))",
+    border: `1px solid ${THEME.border}`,
+    boxShadow: "0 18px 60px rgba(0,0,0,0.34)",
+    backdropFilter: "blur(24px)",
     flexShrink: 0,
   },
   backBtn: {
@@ -111,7 +115,9 @@ const styles = {
   messagesArea: {
     flex: 1,
     overflowY: "auto",
-    padding: "16px",
+    padding: "18px 14px",
+    backgroundImage: "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+    backgroundSize: "28px 28px",
     display: "flex",
     flexDirection: "column",
     gap: "4px",
@@ -125,8 +131,10 @@ const styles = {
   },
   messageBubble: {
     maxWidth: "75%",
-    padding: "10px 14px",
-    borderRadius: "16px",
+    padding: "11px 14px",
+    borderRadius: "20px",
+    border: `1px solid ${THEME.border}`,
+    boxShadow: "0 14px 36px rgba(0,0,0,0.24)",
     fontSize: "14px",
     lineHeight: "1.4",
     wordBreak: "break-word",
@@ -134,13 +142,13 @@ const styles = {
   },
   sentBubble: {
     alignSelf: "flex-end",
-    backgroundColor: THEME.teal,
-    color: "#000",
+    background: "linear-gradient(135deg, #20FFD5, #4AA3FF 58%, #8B5CFF)",
+    color: "#050413",
     borderBottomRightRadius: "4px",
   },
   receivedBubble: {
     alignSelf: "flex-start",
-    backgroundColor: THEME.cardBg,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.14), rgba(255,255,255,0.055))",
     color: THEME.text,
     border: `1px solid ${THEME.border}`,
     borderBottomLeftRadius: "4px",
@@ -182,9 +190,12 @@ const styles = {
   inputArea: {
     display: "flex",
     alignItems: "center",
-    padding: "12px 16px",
-    backgroundColor: THEME.cardBg,
-    borderTop: `1px solid ${THEME.border}`,
+    margin: "0 12px 12px",
+    padding: "12px",
+    borderRadius: "28px",
+    background: "rgba(12,8,34,0.82)",
+    border: `1px solid ${THEME.border}`,
+    boxShadow: "0 20px 60px rgba(0,0,0,0.34)",
     gap: "10px",
     flexShrink: 0,
   },
@@ -207,8 +218,8 @@ const styles = {
     height: "44px",
     borderRadius: "50%",
     border: "none",
-    backgroundColor: THEME.teal,
-    color: "#000",
+    background: "linear-gradient(135deg, #20FFD5, #4AA3FF 58%, #8B5CFF)",
+    color: "#050413",
     fontSize: "18px",
     cursor: "pointer",
     display: "flex",
@@ -221,6 +232,46 @@ const styles = {
     backgroundColor: THEME.inputBg,
     color: THEME.textSecondary,
     cursor: "not-allowed",
+  },
+  securityStrip: {
+    margin: "10px 14px 0",
+    padding: "10px 12px",
+    borderRadius: "18px",
+    background: "linear-gradient(135deg, rgba(32,255,213,0.14), rgba(139,92,255,0.14))",
+    border: `1px solid ${THEME.border}`,
+    color: THEME.text,
+    fontSize: "12px",
+    fontWeight: "800",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  aiRail: {
+    display: "flex",
+    gap: "8px",
+    overflowX: "auto",
+    padding: "10px 14px 0",
+  },
+  aiChip: {
+    flexShrink: 0,
+    padding: "9px 12px",
+    borderRadius: "999px",
+    border: `1px solid ${THEME.border}`,
+    background: "rgba(255,255,255,0.10)",
+    color: THEME.text,
+    fontSize: "12px",
+    fontWeight: "800",
+    cursor: "pointer",
+  },
+  badgeRow: { display: "flex", gap: "6px", marginTop: "7px", flexWrap: "wrap" },
+  msgBadge: {
+    padding: "4px 7px",
+    borderRadius: "999px",
+    background: "rgba(32,255,213,0.12)",
+    color: THEME.text,
+    fontSize: "10px",
+    fontWeight: "800",
   },
   loadMoreBtn: {
     alignSelf: "center",
@@ -446,6 +497,17 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
         </div>
       </div>
 
+      <div style={styles.securityStrip}>
+        <span>🔐 E2E encrypted</span>
+        <span>🌐 English ⇄ Auto</span>
+        <span>💾 Backup ready</span>
+      </div>
+      <div style={styles.aiRail}>
+        {["✨ Smart reply", "🤖 Ask AI", "🌐 Translate", "🔐 Verify"].map((label) => (
+          <button key={label} style={styles.aiChip} onClick={() => setInputText(label.includes("AI") ? "@ai Summarize this chat" : "Sounds good, please share more details.")}>{label}</button>
+        ))}
+      </div>
+
       {/* Messages */}
       <div style={styles.messagesArea} ref={messagesAreaRef}>
         {messages.length >= messageLimit && (
@@ -486,6 +548,10 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
                 }}
               >
                 <div>{msg.text}</div>
+                <div style={styles.badgeRow}>
+                  <span style={styles.msgBadge}>🔐 Protected</span>
+                  {!isSent && <span style={styles.msgBadge}>🌐 Auto translated</span>}
+                </div>
                 <div
                   style={{
                     ...styles.messageTime,

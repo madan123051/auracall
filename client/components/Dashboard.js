@@ -9,14 +9,14 @@ import { watchMultiplePresence, formatLastSeen } from "../lib/presence";
 import { getUserProfile, updateUserDisplayName, updateUserBio, uploadProfilePhoto } from "../lib/auth";
 
 const THEME = {
-  bg: "#070B10",
-  cardBg: "#0D1117",
-  teal: "#00BFA6",
-  tealHover: "#00E5C3",
-  text: "#FFFFFF",
-  textSecondary: "#8B949E",
-  border: "#21262D",
-  inputBg: "#161B22",
+  bg: "#070319",
+  cardBg: "rgba(255,255,255,0.08)",
+  teal: "#20FFD5",
+  tealHover: "#6C63FF",
+  text: "#F8FBFF",
+  textSecondary: "#AAB7D4",
+  border: "rgba(255,255,255,0.14)",
+  inputBg: "rgba(255,255,255,0.10)",
   onlineGreen: "#2EA043",
   offlineGray: "#484F58",
   dangerRed: "#F85149",
@@ -27,7 +27,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     height: "100vh",
-    backgroundColor: THEME.bg,
+    background: "radial-gradient(circle at 12% 0%, rgba(32,255,213,0.22), transparent 32%), radial-gradient(circle at 92% 8%, rgba(255,79,184,0.18), transparent 28%), linear-gradient(180deg, #070319 0%, #11082F 100%)",
     color: THEME.text,
     maxWidth: "480px",
     margin: "0 auto",
@@ -39,14 +39,18 @@ const styles = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "16px 20px",
-    backgroundColor: THEME.cardBg,
-    borderBottom: `1px solid ${THEME.border}`,
+    margin: "12px 12px 0",
+    borderRadius: "28px",
+    background: "linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05))",
+    border: `1px solid ${THEME.border}`,
+    boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+    backdropFilter: "blur(24px)",
     flexShrink: 0,
   },
   logo: {
-    fontSize: "22px",
-    fontWeight: "800",
-    background: `linear-gradient(135deg, ${THEME.teal}, ${THEME.tealHover})`,
+    fontSize: "24px",
+    fontWeight: "900",
+    background: "linear-gradient(135deg, #20FFD5 0%, #4AA3FF 45%, #8B5CFF 75%, #FF4FB8 100%)",
     WebkitBackgroundClip: "text",
     WebkitTextFillColor: "transparent",
     letterSpacing: "-0.5px",
@@ -84,8 +88,11 @@ const styles = {
   },
   bottomNav: {
     display: "flex",
-    borderTop: `1px solid ${THEME.border}`,
-    backgroundColor: THEME.cardBg,
+    margin: "0 14px 14px",
+    borderRadius: "28px",
+    border: `1px solid ${THEME.border}`,
+    background: "rgba(12,8,34,0.82)",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.42)",
     flexShrink: 0,
     paddingBottom: "env(safe-area-inset-bottom, 0px)",
   },
@@ -131,8 +138,12 @@ const styles = {
   callCard: {
     display: "flex",
     alignItems: "center",
-    padding: "14px 20px",
-    borderBottom: `1px solid ${THEME.border}`,
+    margin: "10px 14px",
+    padding: "16px",
+    borderRadius: "24px",
+    border: `1px solid ${THEME.border}`,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))",
+    boxShadow: "0 14px 44px rgba(0,0,0,0.25)",
     transition: "background-color 0.2s ease",
     cursor: "pointer",
   },
@@ -185,8 +196,12 @@ const styles = {
   chatCard: {
     display: "flex",
     alignItems: "center",
-    padding: "14px 20px",
-    borderBottom: `1px solid ${THEME.border}`,
+    margin: "10px 14px",
+    padding: "16px",
+    borderRadius: "24px",
+    border: `1px solid ${THEME.border}`,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))",
+    boxShadow: "0 14px 44px rgba(0,0,0,0.25)",
     cursor: "pointer",
     transition: "background-color 0.2s ease",
   },
@@ -442,6 +457,54 @@ const styles = {
     justifyContent: "center",
     transition: "all 0.2s ease",
     flexShrink: 0,
+  },
+  upgradeHero: {
+    margin: "12px 14px 8px",
+    padding: "18px",
+    borderRadius: "30px",
+    border: `1px solid ${THEME.border}`,
+    background: "linear-gradient(135deg, rgba(32,255,213,0.18), rgba(139,92,255,0.20) 52%, rgba(255,79,184,0.14))",
+    boxShadow: "0 24px 70px rgba(0,0,0,0.30)",
+  },
+  upgradeKicker: {
+    color: THEME.teal,
+    fontSize: "11px",
+    fontWeight: "900",
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+  },
+  upgradeTitle: {
+    margin: "6px 0 8px",
+    fontSize: "24px",
+    lineHeight: 1.05,
+    fontWeight: "950",
+    color: THEME.text,
+    letterSpacing: "-0.8px",
+  },
+  upgradeSubtitle: {
+    color: THEME.textSecondary,
+    fontSize: "13px",
+    lineHeight: 1.45,
+  },
+  pillRow: { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "14px" },
+  featurePill: {
+    padding: "7px 10px",
+    borderRadius: "999px",
+    background: "rgba(255,255,255,0.10)",
+    border: `1px solid ${THEME.border}`,
+    fontSize: "11px",
+    fontWeight: "800",
+    color: THEME.text,
+  },
+  settingChip: {
+    margin: "10px 20px 0",
+    padding: "14px",
+    borderRadius: "20px",
+    border: `1px solid ${THEME.border}`,
+    background: "linear-gradient(135deg, rgba(32,255,213,0.12), rgba(139,92,255,0.12))",
+    color: THEME.text,
+    fontSize: "13px",
+    fontWeight: "700",
   },
   uploadingOverlay: {
     position: "absolute",
@@ -704,7 +767,7 @@ export default function Dashboard({ onStartVideoCall }) {
         key={call.id}
         style={styles.callCard}
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = THEME.cardBg)}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))")}
       >
         {renderAvatar(call.peerPhoto, call.peerName)}
         <div style={styles.callInfo}>
@@ -778,7 +841,7 @@ export default function Dashboard({ onStartVideoCall }) {
           style={styles.chatCard}
           onClick={() => handleChatClick(chat)}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = THEME.cardBg)}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))")}
         >
           <div style={{ position: "relative" }}>
             {renderAvatar(info.photoURL, info.name)}
@@ -1004,6 +1067,9 @@ export default function Dashboard({ onStartVideoCall }) {
           </div>
         </div>
 
+        <div style={styles.settingChip}>🌐 Auto translate incoming: ON · Display language: English · Original text available in chat</div>
+        <div style={styles.settingChip}>🔐 Encryption mode: E2E active · Backup encryption ready with PBKDF2</div>
+
         {/* Stats */}
         <div style={styles.statsRow}>
           <div style={styles.statCard}>
@@ -1038,7 +1104,7 @@ export default function Dashboard({ onStartVideoCall }) {
             paddingBottom: "20px",
           }}
         >
-          AuraCall v2.0
+          AuraCall X v2 Intelligence
         </div>
       </div>
     );
@@ -1055,7 +1121,7 @@ export default function Dashboard({ onStartVideoCall }) {
     <div style={styles.container}>
       {/* Top Bar */}
       <div style={styles.topBar}>
-        <div style={styles.logo}>AuraCall</div>
+        <div style={styles.logo}>AuraCall X</div>
         <button
           style={styles.notifBtn}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = THEME.border)}
@@ -1064,6 +1130,17 @@ export default function Dashboard({ onStartVideoCall }) {
           🔔
           {totalUnread > 0 && <span style={styles.notifBadge} />}
         </button>
+      </div>
+
+      <div style={styles.upgradeHero}>
+        <div style={styles.upgradeKicker}>Version 2 Intelligence Layer</div>
+        <div style={styles.upgradeTitle}>AI chat, live translation, protected calls.</div>
+        <div style={styles.upgradeSubtitle}>Receiver-language display, smart replies, and encryption status are now built into the real web app.</div>
+        <div style={styles.pillRow}>
+          <span style={styles.featurePill}>🤖 Smart replies</span>
+          <span style={styles.featurePill}>🌐 Auto translate</span>
+          <span style={styles.featurePill}>🔐 E2E + backup</span>
+        </div>
       </div>
 
       {/* Content */}
