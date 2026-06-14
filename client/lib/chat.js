@@ -4,6 +4,7 @@ import {
   setDoc,
   getDoc,
   addDoc,
+  deleteDoc,
   updateDoc,
   query,
   where,
@@ -84,6 +85,56 @@ export async function sendMessage(chatId, senderId, text) {
     console.error("[Chat] sendMessage error:", error);
     throw error;
   }
+}
+
+/**
+ * Delete a message sent by the current user and refresh the chat preview.
+ */
+export async function deleteMessage(chatId, messageId, senderId) {
+  if (!chatId || !messageId || !senderId) {
+    throw new Error("Missing required fields for deleteMessage");
+  }
+
+  const messageRef = doc(db, "chats", chatId, "messages", messageId);
+  const messageSnap = await getDoc(messageRef);
+  if (!messageSnap.exists()) return;
+
+  const message = messageSnap.data();
+  if (message.senderId !== senderId) {
+    throw new Error("You can only delete messages you sent");
+  }
+
+  await deleteDoc(messageRef);
+
+  const messagesRef = collection(db, "chats", chatId, "messages");
+  const latestQuery = query(messagesRef, orderBy("timestamp", "desc"), firestoreLimit(1));
+  const latestSnapshot = await getDocs(latestQuery);
+  const latestMessage = latestSnapshot.docs[0]?.data();
+  const chatRef = doc(db, "chats", chatId);
+  const chatSnap = await getDoc(chatRef);
+
+  if (chatSnap.exists()) {
+    const updateData = {
+      lastMessage: latestMessage
+        ? {
+            text: latestMessage.text || "",
+            senderId: latestMessage.senderId || "",
+            timestamp: latestMessage.timestamp || serverTimestamp(),
+          }
+        : null,
+    };
+
+    if (!message.read) {
+      const receiverId = chatSnap.data().participants?.find((uid) => uid !== senderId);
+      if (receiverId) {
+        const unreadCount = chatSnap.data().unreadCount?.[receiverId] || 0;
+        updateData[`unreadCount.${receiverId}`] = Math.max(0, unreadCount - 1);
+      }
+    }
+    await updateDoc(chatRef, updateData);
+  }
+
+  console.log("[Chat] Message deleted from", chatId);
 }
 
 /**

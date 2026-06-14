@@ -11,6 +11,7 @@ import {
   searchUsers,
 } from "../lib/friends";
 import { watchMultiplePresence, formatLastSeen } from "../lib/presence";
+import UiIcon from "./UiIcon";
 
 const THEME = {
   bg: "#070B10",
@@ -364,7 +365,7 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
     if (friends.length === 0) {
       return (
         <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>👥</div>
+          <div style={styles.emptyIcon}><UiIcon name="users" size={38} /></div>
           <div style={styles.emptyText}>No friends yet</div>
           <div style={styles.emptySubtext}>Discover people in the Discover tab</div>
         </div>
@@ -416,15 +417,15 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
                 onOpenChat && onOpenChat(friend);
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = THEME.teal;
-                e.target.style.color = "#000";
+                e.currentTarget.style.backgroundColor = THEME.teal;
+                e.currentTarget.style.color = "#000";
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = THEME.inputBg;
-                e.target.style.color = THEME.textSecondary;
+                e.currentTarget.style.backgroundColor = THEME.inputBg;
+                e.currentTarget.style.color = THEME.textSecondary;
               }}
             >
-              💬
+              <UiIcon name="chat" size={18} />
             </button>
             <button
               style={styles.iconBtn}
@@ -434,15 +435,15 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
                 onStartCall && onStartCall(friend, "audio");
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = THEME.teal;
-                e.target.style.color = "#000";
+                e.currentTarget.style.backgroundColor = THEME.teal;
+                e.currentTarget.style.color = "#000";
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = THEME.inputBg;
-                e.target.style.color = THEME.textSecondary;
+                e.currentTarget.style.backgroundColor = THEME.inputBg;
+                e.currentTarget.style.color = THEME.textSecondary;
               }}
             >
-              📞
+              <UiIcon name="phone" size={18} />
             </button>
             <button
               style={styles.iconBtn}
@@ -452,15 +453,15 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
                 onStartCall && onStartCall(friend, "video");
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = THEME.teal;
-                e.target.style.color = "#000";
+                e.currentTarget.style.backgroundColor = THEME.teal;
+                e.currentTarget.style.color = "#000";
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = THEME.inputBg;
-                e.target.style.color = THEME.textSecondary;
+                e.currentTarget.style.backgroundColor = THEME.inputBg;
+                e.currentTarget.style.color = THEME.textSecondary;
               }}
             >
-              🎥
+              <UiIcon name="video" size={18} />
             </button>
             <button
               style={{ ...styles.iconBtn, fontSize: "14px" }}
@@ -470,15 +471,15 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
                 handleRemoveFriend(friend);
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = "rgba(248,81,73,0.15)";
-                e.target.style.color = THEME.dangerRed;
+                e.currentTarget.style.backgroundColor = "rgba(248,81,73,0.15)";
+                e.currentTarget.style.color = THEME.dangerRed;
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = THEME.inputBg;
-                e.target.style.color = THEME.textSecondary;
+                e.currentTarget.style.backgroundColor = THEME.inputBg;
+                e.currentTarget.style.color = THEME.textSecondary;
               }}
             >
-              ✕
+              <UiIcon name="trash" size={17} />
             </button>
           </div>
         </div>
@@ -490,7 +491,7 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
     if (pendingRequests.length === 0) {
       return (
         <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>📩</div>
+          <div style={styles.emptyIcon}><UiIcon name="inbox" size={38} /></div>
           <div style={styles.emptyText}>No pending requests</div>
           <div style={styles.emptySubtext}>When someone sends you a request, it will appear here</div>
         </div>
@@ -551,14 +552,14 @@ export default function FriendsList({ onOpenChat, onStartCall }) {
           )}
           {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
             <div style={styles.emptyState}>
-              <div style={styles.emptyIcon}>🔍</div>
+              <div style={styles.emptyIcon}><UiIcon name="search" size={38} /></div>
               <div style={styles.emptyText}>No users found</div>
               <div style={styles.emptySubtext}>Try a different name</div>
             </div>
           )}
           {!searching && searchQuery.trim().length < 2 && (
             <div style={styles.emptyState}>
-              <div style={styles.emptyIcon}>🌐</div>
+              <div style={styles.emptyIcon}><UiIcon name="globe" size={38} /></div>
               <div style={styles.emptyText}>Discover People</div>
               <div style={styles.emptySubtext}>Type at least 2 characters to search</div>
             </div>
