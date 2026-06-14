@@ -7,12 +7,12 @@ import IncomingCallOverlay from '../components/IncomingCallOverlay';
 import { warmUpAudio } from '../lib/sounds';
 
 const COLORS = {
-  bgDeep: '#070B10',
-  bgPrimary: '#0D1117',
-  bgCard: '#161B22',
-  border: '#21262D',
-  teal: '#00BFA6',
-  tealDark: '#00897B',
+  bgDeep: '#070319',
+  bgPrimary: '#11082F',
+  bgCard: 'rgba(255,255,255,0.10)',
+  border: 'rgba(255,255,255,0.14)',
+  teal: '#20FFD5',
+  tealDark: '#8B5CFF',
   accept: '#22C55E',
   reject: '#EF4444',
   text: '#F0F6FC',
@@ -161,7 +161,7 @@ function LoginPage() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        background: COLORS.bgDeep,
+        background: 'radial-gradient(circle at 18% 4%, rgba(32,255,213,0.24), transparent 30%), radial-gradient(circle at 88% 12%, rgba(255,79,184,0.18), transparent 28%), linear-gradient(180deg, #070319 0%, #11082F 100%)',
         color: COLORS.text,
         gap: 24,
       }}
@@ -186,10 +186,10 @@ function LoginPage() {
 
       <div style={{ textAlign: 'center' }}>
         <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0 }}>
-          Aura<span style={{ color: COLORS.teal }}>Call</span>
+          Aura<span style={{ color: COLORS.teal }}>Call</span> X
         </h1>
         <p style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 8 }}>
-          Crystal-clear video calls, anywhere
+          AI chat, live translation, and protected video calls
         </p>
       </div>
 
@@ -229,7 +229,7 @@ function LoginPage() {
             transition: 'all 0.2s',
           }}
         >
-          {loading ? 'Signing in...' : '🚀 Try as Guest'}
+          {loading ? 'Signing in...' : '🚀 Enter AuraCall X'}
         </button>
       </div>
     </div>
@@ -350,7 +350,7 @@ export default function Home() {
 
         <div style={{ textAlign: 'center', animation: 'loadingFadeIn 0.6s ease-out' }}>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0 }}>
-            Aura<span style={{ color: COLORS.teal }}>Call</span>
+            Aura<span style={{ color: COLORS.teal }}>Call</span> X
           </h1>
           <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 12 }}>
             {[0, 1, 2].map((i) => (
