@@ -107,7 +107,7 @@ export default function SwipeActionRow({
 
   return (
     <div
-      className={`swipe-action-row ${offset ? "is-open" : ""} ${dragging ? "is-dragging" : ""} ${className}`.trim()}
+      className={`swipe-action-row ${offset > 0 ? "is-open is-open-right" : offset < 0 ? "is-open is-open-left" : ""} ${dragging ? "is-dragging" : ""} ${className}`.trim()}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishSwipe}

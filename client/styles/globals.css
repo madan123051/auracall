@@ -2095,7 +2095,8 @@ button {
   transition: opacity 120ms ease;
 }
 
-.swipe-action-row.is-open .swipe-delete-action {
+.swipe-action-row.is-open-right .swipe-delete-action.is-left,
+.swipe-action-row.is-open-left .swipe-delete-action.is-right {
   opacity: 1;
   pointer-events: auto;
 }
