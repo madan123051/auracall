@@ -2090,13 +2090,17 @@ button {
   color: #fff;
   background: linear-gradient(145deg, #ff416c, #d91f4f);
   cursor: pointer;
-  /* FIX: hide by default — only reveal when the row is swiped open or dragging */
+  /* FIX: hide by default — multi-property for cross-browser reliability */
   visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .swipe-action-row.is-open .swipe-delete-action,
 .swipe-action-row.is-dragging .swipe-delete-action {
   visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .swipe-delete-action.is-left {
@@ -2138,11 +2142,24 @@ button {
   transition: 150ms ease;
 }
 
-.swipe-action-row:hover .swipe-desktop-delete,
-.swipe-action-row:focus-within .swipe-desktop-delete {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(-50%) scale(1);
+/* Only reveal desktop trash icon on true-hover devices (mouse/trackpad).
+   On touch devices (iOS/Android) :hover is sticky after a tap, so we
+   gate the entire interaction behind the hover media query and force
+   the button completely off on coarse-pointer (touch) screens. */
+@media (hover: hover) and (pointer: fine) {
+  .swipe-action-row:hover .swipe-desktop-delete,
+  .swipe-action-row:focus-within .swipe-desktop-delete {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+/* Belt-and-suspenders: explicitly kill it on touch/coarse-pointer devices */
+@media (hover: none), (pointer: coarse) {
+  .swipe-desktop-delete {
+    display: none !important;
+  }
 }
 
 .aura-message-row .swipe-action-content {
