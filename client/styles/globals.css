@@ -2090,6 +2090,14 @@ button {
   color: #fff;
   background: linear-gradient(145deg, #ff416c, #d91f4f);
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.swipe-action-row.is-open .swipe-delete-action {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .swipe-delete-action.is-left {
