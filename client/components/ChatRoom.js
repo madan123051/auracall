@@ -349,11 +349,15 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
   const [aiNote, setAiNote] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [peerProfile, setPeerProfile] = useState(null);
+  // Reply state
+  const [replyTo, setReplyTo] = useState(null);
+
   const messagesEndRef = useRef(null);
   const messagesAreaRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const prevMessageCountRef = useRef(0);
   const attemptedTranslationsRef = useRef(new Set());
+  const inputRef = useRef(null);
 
   const chatId = currentUser && peer ? getChatId(currentUser.uid, peer.uid) : null;
   const targetLanguage =
@@ -505,7 +509,9 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
     if (!inputText.trim() || !chatId || !currentUser || sending) return;
 
     const text = inputText.trim();
+    const currentReplyTo = replyTo;
     setInputText("");
+    setReplyTo(null);
     setSending(true);
 
     // Clear typing indicator
@@ -515,10 +521,11 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
     }
 
     try {
-      await sendMessage(chatId, currentUser.uid, text);
+      await sendMessage(chatId, currentUser.uid, text, currentReplyTo);
     } catch (error) {
       console.error("[ChatRoom] Send error:", error);
       setInputText(text); // Restore on error
+      setReplyTo(currentReplyTo);
     } finally {
       setSending(false);
     }
@@ -545,6 +552,13 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
     setActionNotice("Message deleted");
     window.setTimeout(() => setActionNotice(""), 2200);
   };
+
+  // Handle reply — set replyTo and focus input
+  const handleReply = useCallback((msg) => {
+    const senderName = msg.senderId === currentUser?.uid ? "You" : peerName;
+    setReplyTo({ id: msg.id, text: msg.text, senderName });
+    window.setTimeout(() => inputRef.current?.focus(), 50);
+  }, [currentUser, peerName]);
 
   const translateMessage = async (message, automatic = false) => {
     if (!message?.id || !message.text || message.senderId === currentUser.uid) return;
@@ -837,72 +851,66 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
               {shouldShowDateDivider(msg, index) && (
                 <div style={styles.dateDivider}>{formatDateDivider(msg.timestamp)}</div>
               )}
-              {isSent ? (
-                <SwipeActionRow
-                  className="aura-message-row is-sent"
-                  confirmMessage="Delete this message for everyone?"
-                  deleteLabel="Delete"
-                  onDelete={() => handleDeleteMessage(msg)}
-                  onDeleteError={(error) => {
-                    setActionNotice(error.message || "Could not delete message");
-                    window.setTimeout(() => setActionNotice(""), 2600);
+              <SwipeActionRow
+                className={`aura-message-row ${isSent ? "is-sent" : "is-received"}`}
+                onReply={() => handleReply(msg)}
+                onDelete={isSent ? () => handleDeleteMessage(msg) : undefined}
+                confirmMessage="Delete this message for everyone?"
+                deleteLabel="Delete"
+                onDeleteError={(error) => {
+                  setActionNotice(error.message || "Could not delete message");
+                  window.setTimeout(() => setActionNotice(""), 2600);
+                }}
+              >
+                <div
+                  className={`aura-message-bubble ${isSent ? "is-sent" : "is-received"}`}
+                  style={{
+                    ...styles.messageBubble,
+                    ...(isSent ? styles.sentBubble : styles.receivedBubble),
                   }}
                 >
-                  <div
-                    className="aura-message-bubble is-sent"
-                    style={{ ...styles.messageBubble, ...styles.sentBubble }}
-                  >
-                    <div>{msg.text}</div>
-                    <div className="aura-message-meta">
-                      <span className="aura-message-protected" title="Protected message">
-                        <UiIcon name="lock" size={10} strokeWidth={2} />
-                      </span>
-                      <div style={{ ...styles.messageTime, ...styles.sentTime }}>
-                        <span>{formatMessageTime(msg.timestamp)}</span>
-                        <span style={styles.readReceipt}>{msg.read ? "✓✓" : "✓"}</span>
-                      </div>
+                  {/* Quoted reply preview inside bubble */}
+                  {msg.replyTo && (
+                    <div className={`aura-message-reply-quote ${isSent ? "is-sent" : "is-received"}`}>
+                      <span className="aura-reply-quote-sender">{msg.replyTo.senderName}</span>
+                      <span className="aura-reply-quote-text">{msg.replyTo.text}</span>
                     </div>
-                  </div>
-                </SwipeActionRow>
-              ) : (
-                <div
-                  className="aura-message-bubble is-received"
-                  style={{ ...styles.messageBubble, ...styles.receivedBubble }}
-                >
-                  <div>
-                    {translations[msg.id] && !showOriginal[msg.id]
-                      ? translations[msg.id]
-                      : msg.text}
-                  </div>
+                  )}
+
+                  <div>{msg.text}</div>
+
                   <div className="aura-message-meta">
-                    <button
-                      type="button"
-                      style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
-                      disabled={Boolean(translationPending)}
-                      onClick={() => {
-                        if (translations[msg.id]) {
-                          setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }));
-                        } else {
-                          translateMessage(msg);
-                        }
-                      }}
-                    >
-                      <UiIcon name="globe" size={11} />
-                      {translationPending === msg.id
-                        ? "Translating..."
-                        : translations[msg.id]
-                          ? showOriginal[msg.id] ? t("translated") : t("original")
-                          : t("translate")}
-                    </button>
+                    {!isSent && (
+                      <button
+                        type="button"
+                        style={{ ...styles.msgBadge, border: 0, cursor: "pointer" }}
+                        disabled={Boolean(translationPending)}
+                        onClick={() => {
+                          if (translations[msg.id]) {
+                            setShowOriginal((current) => ({ ...current, [msg.id]: !current[msg.id] }));
+                          } else {
+                            translateMessage(msg);
+                          }
+                        }}
+                      >
+                        <UiIcon name="globe" size={11} />
+                        {translationPending === msg.id
+                          ? "Translating..."
+                          : translations[msg.id]
+                            ? showOriginal[msg.id] ? t("translated") : t("original")
+                            : t("translate")}
+                      </button>
+                    )}
                     <span className="aura-message-protected" title="Protected message">
                       <UiIcon name="lock" size={10} strokeWidth={2} />
                     </span>
-                    <div style={{ ...styles.messageTime, ...styles.receivedTime }}>
+                    <div style={{ ...styles.messageTime, ...(isSent ? styles.sentTime : styles.receivedTime) }}>
                       <span>{formatMessageTime(msg.timestamp)}</span>
+                      {isSent && <span style={styles.readReceipt}>{msg.read ? "✓✓" : "✓"}</span>}
                     </div>
                   </div>
                 </div>
-              )}
+              </SwipeActionRow>
             </React.Fragment>
           );
         })}
@@ -910,36 +918,38 @@ export default function ChatRoom({ peer, onBack, onStartCall }) {
         {/* Typing indicator */}
         {isTyping && (
           <div style={styles.typingIndicator}>
-            <div
-              style={{
-                ...styles.typingDot,
-                animation: "typingBounce 1.4s infinite",
-                animationDelay: "0s",
-              }}
-            />
-            <div
-              style={{
-                ...styles.typingDot,
-                animation: "typingBounce 1.4s infinite",
-                animationDelay: "0.2s",
-              }}
-            />
-            <div
-              style={{
-                ...styles.typingDot,
-                animation: "typingBounce 1.4s infinite",
-                animationDelay: "0.4s",
-              }}
-            />
+            <div style={{ ...styles.typingDot, animation: "typingBounce 1.4s infinite", animationDelay: "0s" }} />
+            <div style={{ ...styles.typingDot, animation: "typingBounce 1.4s infinite", animationDelay: "0.2s" }} />
+            <div style={{ ...styles.typingDot, animation: "typingBounce 1.4s infinite", animationDelay: "0.4s" }} />
           </div>
         )}
 
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Reply bar — appears above input when replying */}
+      {replyTo && (
+        <div className="aura-reply-bar">
+          <UiIcon name="reply" size={15} />
+          <div className="aura-reply-bar-content">
+            <span className="aura-reply-bar-sender">{replyTo.senderName}</span>
+            <span className="aura-reply-bar-text">{replyTo.text}</span>
+          </div>
+          <button
+            type="button"
+            className="aura-reply-bar-close"
+            onClick={() => setReplyTo(null)}
+            aria-label="Cancel reply"
+          >
+            <UiIcon name="close" size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Input area */}
       <div className="aura-chat-input-area" style={styles.inputArea}>
         <textarea
+          ref={inputRef}
           style={styles.messageInput}
           placeholder={t("typeMessage")}
           value={inputText}
