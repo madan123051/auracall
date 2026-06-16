@@ -30,8 +30,12 @@ export function getChatId(uid1, uid2) {
 /**
  * Send a message in a chat.
  * Creates the chat document if it doesn't exist.
+ * @param {string} chatId
+ * @param {string} senderId
+ * @param {string} text
+ * @param {{ id: string, text: string, senderName: string } | null} replyTo
  */
-export async function sendMessage(chatId, senderId, text) {
+export async function sendMessage(chatId, senderId, text, replyTo = null) {
   if (!chatId || !senderId || !text.trim()) {
     throw new Error("Missing required fields for sendMessage");
   }
@@ -40,14 +44,24 @@ export async function sendMessage(chatId, senderId, text) {
     const participants = chatId.split("_");
     const receiverId = participants.find((p) => p !== senderId) || participants[0];
 
-    // Add message to subcollection
-    const messagesRef = collection(db, "chats", chatId, "messages");
-    await addDoc(messagesRef, {
+    // Build message data
+    const messageData = {
       senderId,
       text: text.trim(),
       timestamp: serverTimestamp(),
       read: false,
-    });
+    };
+    if (replyTo) {
+      messageData.replyTo = {
+        id: replyTo.id,
+        text: replyTo.text,
+        senderName: replyTo.senderName,
+      };
+    }
+
+    // Add message to subcollection
+    const messagesRef = collection(db, "chats", chatId, "messages");
+    await addDoc(messagesRef, messageData);
 
     // Update or create chat document
     const chatRef = doc(db, "chats", chatId);
@@ -177,12 +191,6 @@ export function getMessages(chatId, messageLimit = 50, callback) {
 
 /**
  * Mark all messages as read for a user in a chat.
- *
- * BUG FIX: The original compound query (read == false && senderId != uid)
- * requires a Firestore composite index. Without it, the query silently fails
- * and messages are NEVER marked as read — causing permanent single-tick (✓).
- *
- * Fix: Use single-field query (read == false) + client-side filtering.
  */
 export async function markAsRead(chatId, uid) {
   if (!chatId || !uid) return;
@@ -194,8 +202,6 @@ export async function markAsRead(chatId, uid) {
       [`unreadCount.${uid}`]: 0,
     });
 
-    // Mark individual messages as read
-    // FIX: Use single-field query to avoid composite index requirement
     const messagesRef = collection(db, "chats", chatId, "messages");
     const q = query(messagesRef, where("read", "==", false));
     const snapshot = await getDocs(q);
@@ -204,7 +210,6 @@ export async function markAsRead(chatId, uid) {
       const batch = writeBatch(db);
       let count = 0;
       snapshot.docs.forEach((msgDoc) => {
-        // Client-side filter: only mark messages from OTHER users as read
         if (msgDoc.data().senderId !== uid) {
           batch.update(msgDoc.ref, { read: true });
           count++;
@@ -222,9 +227,6 @@ export async function markAsRead(chatId, uid) {
 
 /**
  * Listen to all chats for a user (realtime).
- * @param {string} uid
- * @param {Function} callback — receives array of chat objects
- * @returns {Function} unsubscribe
  */
 export function getChats(uid, callback) {
   if (!uid) {
@@ -272,10 +274,6 @@ export function setTyping(chatId, uid, isTyping) {
 
 /**
  * Watch the other user's typing status in a chat.
- * @param {string} chatId
- * @param {string} otherUid — the other user's uid (NOT the current user)
- * @param {Function} callback — receives boolean
- * @returns {Function} unsubscribe
  */
 export function watchTyping(chatId, otherUid, callback) {
   if (!chatId || !otherUid) {
@@ -289,7 +287,6 @@ export function watchTyping(chatId, otherUid, callback) {
     (snapshot) => {
       const data = snapshot.val();
       if (data && data.isTyping) {
-        // Auto-expire typing after 10 seconds
         const elapsed = Date.now() - (data.timestamp || 0);
         callback(elapsed < 10000);
       } else {

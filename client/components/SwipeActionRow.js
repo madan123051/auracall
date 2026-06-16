@@ -7,6 +7,7 @@ const OPEN_THRESHOLD = 46;
 export default function SwipeActionRow({
   children,
   onDelete,
+  onReply,
   confirmMessage = "Delete this item?",
   deleteLabel = "Delete",
   className = "",
@@ -55,10 +56,12 @@ export default function SwipeActionRow({
     if (axisRef.current !== "x") return;
 
     event.preventDefault();
-    const nextOffset = Math.max(
-      -ACTION_WIDTH,
-      Math.min(ACTION_WIDTH, startRef.current.offset + deltaX)
-    );
+
+    let raw = startRef.current.offset + deltaX;
+    // Restrict directions based on available actions
+    if (!onReply && raw > 0) raw = 0;
+    if (!onDelete && raw < 0) raw = 0;
+    const nextOffset = Math.max(-ACTION_WIDTH, Math.min(ACTION_WIDTH, raw));
     updateOffset(nextOffset);
   };
 
@@ -66,12 +69,21 @@ export default function SwipeActionRow({
     if (!draggingRef.current) return;
     draggingRef.current = false;
     setDragging(false);
-    const nextOffset =
-      Math.abs(offsetRef.current) >= OPEN_THRESHOLD
-        ? Math.sign(offsetRef.current || 1) * ACTION_WIDTH
-        : 0;
+
+    const currentOffset = offsetRef.current;
+    const abs = Math.abs(currentOffset);
+
+    // Right swipe past threshold → trigger reply and snap back
+    if (currentOffset > 0 && abs >= OPEN_THRESHOLD && onReply) {
+      onReply();
+      updateOffset(0);
+      return;
+    }
+
+    // Left swipe past threshold → open delete action
+    const nextOffset = abs >= OPEN_THRESHOLD ? Math.sign(currentOffset) * ACTION_WIDTH : 0;
     updateOffset(nextOffset);
-    if (nextOffset) {
+    if (nextOffset !== 0) {
       window.dispatchEvent(
         new CustomEvent("auracall:swipe-open", { detail: rowIdRef.current })
       );
@@ -92,45 +104,61 @@ export default function SwipeActionRow({
     }
   };
 
-  const actionButton = (side) => (
-    <button
-      className={`swipe-delete-action is-${side}`}
-      type="button"
-      onClick={handleDelete}
-      disabled={deleting}
-      aria-label={deleteLabel}
-    >
-      <UiIcon name="trash" size={18} />
-      <span>{deleting ? "Deleting" : deleteLabel}</span>
-    </button>
-  );
-
   return (
     <div
-      className={`swipe-action-row ${offset ? "is-open" : ""} ${dragging ? "is-dragging" : ""} ${className}`.trim()}
+      className={`swipe-action-row ${offset > 0 ? "is-open is-open-right" : offset < 0 ? "is-open is-open-left" : ""} ${dragging ? "is-dragging" : ""} ${className}`.trim()}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishSwipe}
       onPointerCancel={finishSwipe}
     >
-      {actionButton("left")}
-      {actionButton("right")}
+      {/* Left slot — Reply (revealed by right swipe, snaps back) */}
+      {onReply && (
+        <button
+          className="swipe-reply-action is-left"
+          type="button"
+          onClick={() => { onReply(); updateOffset(0); }}
+          aria-label="Reply"
+        >
+          <UiIcon name="reply" size={18} />
+          <span>Reply</span>
+        </button>
+      )}
+
+      {/* Right slot — Delete (revealed by left swipe) */}
+      {onDelete && (
+        <button
+          className="swipe-delete-action is-right"
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          aria-label={deleteLabel}
+        >
+          <UiIcon name="trash" size={18} />
+          <span>{deleting ? "Deleting" : deleteLabel}</span>
+        </button>
+      )}
+
       <div
         className="swipe-action-content"
         style={{ transform: `translate3d(${offset}px, 0, 0)` }}
       >
         {children}
       </div>
-      <button
-        className="swipe-desktop-delete"
-        type="button"
-        onClick={handleDelete}
-        disabled={deleting}
-        aria-label={deleteLabel}
-        title={deleteLabel}
-      >
-        <UiIcon name="trash" size={17} />
-      </button>
+
+      {/* Desktop hover delete button */}
+      {onDelete && (
+        <button
+          className="swipe-desktop-delete"
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          aria-label={deleteLabel}
+          title={deleteLabel}
+        >
+          <UiIcon name="trash" size={17} />
+        </button>
+      )}
     </div>
   );
 }
